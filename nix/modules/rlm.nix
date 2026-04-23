@@ -20,7 +20,7 @@ let
   apiKeyExpr = ''File.read!("${cfg.apiKeyFile}") |> String.trim()'';
 
   optionalSetting = name: value: defaultValue:
-    lib.optionalString (value != defaultValue) "\n  ${name}: ${renderValue value}";
+    lib.optionalString (value != defaultValue) ",\n  ${name}: ${renderValue value}";
 
   configText = ''
     import Config

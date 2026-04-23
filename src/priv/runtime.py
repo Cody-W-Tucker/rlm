@@ -26,6 +26,17 @@ __final_result__ = None
 _user_ns = {}
 
 
+class AwaitableString(str):
+    def __new__(cls, value):
+        return super().__new__(cls, value)
+
+    def __await__(self):
+        async def _done():
+            return str(self)
+
+        return _done().__await__()
+
+
 def FINAL(value):
     global __final_result__
     __final_result__ = str(value)
@@ -92,8 +103,8 @@ def llm_query(sub_context, instruction=""):
     return _result_store.pop(request_id, "")
 
 
-async def async_llm_query(sub_context, instruction=""):
-    return await asyncio.get_event_loop().run_in_executor(None, llm_query, sub_context, instruction)
+def async_llm_query(sub_context, instruction=""):
+    return AwaitableString(llm_query(sub_context, instruction))
 
 
 def _refresh_user_ns():

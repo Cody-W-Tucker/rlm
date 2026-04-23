@@ -6,8 +6,20 @@ import Config
 ]
 |> Enum.filter(&File.exists?/1)
 |> Enum.each(fn path ->
-  path
-  |> Config.Reader.read_imports!()
-  |> elem(0)
-  |> Application.put_all_env(persistent: true)
+  {imported, _imports} = Config.Reader.read_imports!(path)
+
+  Enum.each(imported, fn {app, entries} ->
+    Enum.each(entries, fn {key, value} ->
+      current = Application.get_env(app, key)
+
+      merged =
+        if Keyword.keyword?(current) and Keyword.keyword?(value) do
+          Keyword.merge(current, value)
+        else
+          value
+        end
+
+      Application.put_env(app, key, merged, persistent: true)
+    end)
+  end)
 end)

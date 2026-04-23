@@ -5,7 +5,7 @@ defmodule Rlm.Runtime.PythonRepl do
 
   defmodule State do
     @moduledoc false
-    defstruct [:port, :buffer, :awaiting, :handler, :task_refs, :received]
+    defstruct [:port, :buffer, :awaiting, :handler, :task_refs, :received, :shutting_down]
   end
 
   def start(settings, opts \\ []) do
@@ -62,8 +62,9 @@ defmodule Rlm.Runtime.PythonRepl do
        awaiting: %{},
        handler: fn _sub_context, _instruction -> {:error, "No sub-query handler registered"} end,
        task_refs: %{},
-       received: MapSet.new()
-     }}
+       received: MapSet.new(),
+       shutting_down: false
+      }}
   end
 
   @impl true
@@ -131,7 +132,7 @@ defmodule Rlm.Runtime.PythonRepl do
       GenServer.reply(from, {:error, error.message})
     end)
 
-    {:stop, :normal, %{state | awaiting: %{}}}
+    {:stop, :normal, %{state | awaiting: %{}, shutting_down: true}}
   end
 
   @impl true
@@ -169,12 +170,7 @@ defmodule Rlm.Runtime.PythonRepl do
            "instruction" => instruction,
            "id" => request_id
          }} ->
-          task =
-            Task.Supervisor.async_nolink(Rlm.TaskSupervisor, fn ->
-              acc.handler.(sub_context, instruction)
-            end)
-
-          %{acc | task_refs: Map.put(acc.task_refs, task.ref, {request_id, task.pid})}
+          start_llm_query_task(acc, request_id, sub_context, instruction)
 
         {:ok, %{"type" => type} = message} ->
           case Map.pop(acc.awaiting, type) do
@@ -219,4 +215,46 @@ defmodule Rlm.Runtime.PythonRepl do
   defp normalize_task_result({:error, message}) when is_binary(message), do: "[ERROR] #{message}"
   defp normalize_task_result({:error, message}), do: "[ERROR] #{inspect(message)}"
   defp normalize_task_result(other), do: inspect(other)
+
+  defp start_llm_query_task(%State{shutting_down: true} = state, request_id, _sub_context, _instruction) do
+    send_payload(state.port, %{
+      type: "llm_result",
+      id: request_id,
+      result: "[ERROR] Python runtime is shutting down; sub-query aborted."
+    })
+
+    state
+  end
+
+  defp start_llm_query_task(state, request_id, sub_context, instruction) do
+    case Process.whereis(Rlm.TaskSupervisor) do
+      nil ->
+        send_payload(state.port, %{
+          type: "llm_result",
+          id: request_id,
+          result: "[ERROR] Task supervisor is unavailable; sub-query aborted."
+        })
+
+        %{state | shutting_down: true}
+
+      _pid ->
+        try do
+          task =
+            Task.Supervisor.async_nolink(Rlm.TaskSupervisor, fn ->
+              state.handler.(sub_context, instruction)
+            end)
+
+          %{state | task_refs: Map.put(state.task_refs, task.ref, {request_id, task.pid})}
+        catch
+          :exit, {:noproc, _} ->
+            send_payload(state.port, %{
+              type: "llm_result",
+              id: request_id,
+              result: "[ERROR] Task supervisor exited before sub-query start."
+            })
+
+            %{state | shutting_down: true}
+        end
+    end
+  end
 end
