@@ -25,7 +25,7 @@ defmodule Rlm.RLM.Engine do
 
   defp iterate(prompt, context_bundle, settings, provider_module, repl, tracker, opts) do
     history = [
-      %{role: "user", content: build_context_metadata(context_bundle.text, settings, prompt)}
+      %{role: "user", content: build_context_metadata(context_bundle, settings, prompt)}
     ]
 
     execute_iterations(prompt, settings, provider_module, repl, tracker, opts, history, [], 1)
@@ -175,21 +175,57 @@ defmodule Rlm.RLM.Engine do
 
   defp tracker_get(tracker, key), do: Agent.get(tracker, &Map.fetch!(&1, key))
 
-  defp build_context_metadata(context, settings, prompt) do
+  defp build_context_metadata(context_bundle, settings, prompt) do
+    context = context_bundle.text
     lines = String.split(context, "\n")
+    source_count = length(context_bundle.entries)
+
+    source_types =
+      context_bundle.entries
+      |> Enum.frequencies_by(& &1.type)
+      |> Enum.map_join(", ", fn {type, count} -> "#{count} #{type}" end)
+
+    source_preview =
+      context_bundle.entries
+      |> Enum.take(8)
+      |> Enum.map_join("\n", &"  - #{&1.label}")
+
+    source_preview =
+      if source_count > 8 do
+        source_preview <> "\n  - ... (#{source_count - 8} more sources)"
+      else
+        source_preview
+      end
+
+    source_types_display = if source_types == "", do: "none", else: source_types
+
+    strategy_hint =
+      cond do
+        context_bundle.bytes <= 20_000 and source_count <= 20 ->
+          "This looks small-to-medium. Prefer direct reasoning over the whole context or one small number of sub-queries."
+
+        context_bundle.bytes <= 80_000 ->
+          "This looks medium-sized. Use the fewest chunks that could work, and prefer sequential chunking over parallel fan-out."
+
+        true ->
+          "This looks large. Structure the work carefully, keep chunk counts low, and maintain a best-so-far answer."
+      end
 
     [
-      "Context statistics:",
-      "  - #{String.length(context)} characters",
-      "  - #{length(lines)} lines",
+      "Context Header:",
+      "  - Query: #{prompt}",
+      "  - Size: #{String.length(context)} characters, #{length(lines)} lines, #{source_count} source(s)",
+      "  - Source types: #{source_types_display}",
+      "  - Strategy hint: #{strategy_hint}",
+      "",
+      "Source preview:",
+      if(source_preview == "", do: "  - (inline or empty context)", else: source_preview),
       "",
       "First #{settings.metadata_preview_lines} lines:",
       Enum.take(lines, settings.metadata_preview_lines) |> Enum.join("\n"),
       "",
       "Last #{settings.metadata_preview_lines} lines:",
-      Enum.take(lines, -settings.metadata_preview_lines) |> Enum.join("\n"),
-      "",
-      "Query: #{prompt}"
+      Enum.take(lines, -settings.metadata_preview_lines) |> Enum.join("\n")
     ]
     |> Enum.join("\n")
   end
@@ -220,10 +256,16 @@ defmodule Rlm.RLM.Engine do
     Rules:
     - Respond with ONLY a Python code block.
     - Use print() for intermediate output.
+    - Treat iterations, sub-queries, tokens, and latency as a strict budget.
+    - Every `llm_query()` call is expensive. Minimize calls and prefer direct reasoning when the context header says the input is small or medium.
+    - Do not chunk by default. Start with direct synthesis or a single targeted sub-query unless the context is clearly too large.
+    - If you chunk, use the fewest chunks that could work and keep the code simple.
+    - Do not use parallel fan-out unless the context is clearly very large and the expected gain is worth the budget.
+    - If async or a sub-query strategy fails once, do not retry the same strategy. Fall back to simpler sequential reasoning.
+    - Keep a best-so-far answer in a variable and finalize early when it is good enough.
     - Filter and slice context with Python before calling llm_query().
     - Store intermediate results in variables because the REPL is persistent.
-    - Call FINAL() only when you have a complete answer.
-    - Prefer chunking and aggregation for large contexts.
+    - Call FINAL() as soon as you have a useful answer; do not spend budget polishing unnecessarily.
     """
   end
 
