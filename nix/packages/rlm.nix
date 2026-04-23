@@ -1,0 +1,40 @@
+{ pkgs }:
+
+let
+  srcDir = ../../src;
+in
+pkgs.writeShellApplication {
+  name = "rlm";
+
+  runtimeInputs = [ pkgs.elixir pkgs.git pkgs.python3 pkgs.coreutils pkgs.pkgs-beam.hex pkgs.pkgs-beam.rebar3 ];
+
+  text = ''
+    state_root="''${XDG_STATE_HOME:-$HOME/.local/state}/rlm/package"
+    project_dir="$state_root/project"
+    source_marker="$project_dir/.rlm-source"
+    bundled_src='${srcDir}'
+
+    mkdir -p "$state_root"
+
+    if [ ! -d "$project_dir" ] || [ ! -f "$source_marker" ] || [ "$(cat "$source_marker")" != "$bundled_src" ]; then
+      rm -rf "$project_dir"
+      cp -R "$bundled_src" "$project_dir"
+      chmod -R u+w "$project_dir"
+      printf '%s\n' "$bundled_src" > "$source_marker"
+    fi
+
+    export HOME="''${HOME:-$state_root/home}"
+    export MIX_HOME="$state_root/.mix"
+    export HEX_HOME="$state_root/.hex"
+    export ERL_LIBS="${pkgs.pkgs-beam.hex}/lib/erlang/lib''${ERL_LIBS:+:$ERL_LIBS}"
+    mkdir -p "$HOME" "$MIX_HOME" "$HEX_HOME"
+
+    cd "$project_dir"
+
+    if [ ! -d "$project_dir/_build" ]; then
+      mix compile >/dev/null
+    fi
+
+    exec mix rlm "$@"
+  '';
+}
