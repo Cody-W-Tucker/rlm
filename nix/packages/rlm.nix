@@ -9,6 +9,8 @@ pkgs.writeShellApplication {
   runtimeInputs = [ pkgs.elixir pkgs.git pkgs.python3 pkgs.coreutils pkgs.rebar3 ];
 
   text = ''
+    export RLM_CALLER_CWD="$PWD"
+
     state_root="''${XDG_STATE_HOME:-$HOME/.local/state}/rlm/package"
     project_dir="$state_root/project"
     source_marker="$project_dir/.rlm-source"

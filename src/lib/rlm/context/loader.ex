@@ -59,12 +59,12 @@ defmodule Rlm.Context.Loader do
   end
 
   defp load_path(path, settings) do
-    expanded = Path.expand(path)
+    expanded = expand_from_caller(path)
 
     cond do
       File.regular?(expanded) -> load_file(expanded, settings)
       File.dir?(expanded) -> load_directory(expanded, settings)
-      wildcard?(path) -> load_glob(path, settings)
+      wildcard?(path) -> load_glob(expanded, path, settings)
       true -> {:error, "Context source not found: #{path}"}
     end
   end
@@ -104,10 +104,9 @@ defmodule Rlm.Context.Loader do
     end
   end
 
-  defp load_glob(pattern, settings) do
+  defp load_glob(expanded_pattern, original_pattern, settings) do
     matches =
-      pattern
-      |> Path.expand()
+      expanded_pattern
       |> Path.wildcard(match_dot: true)
       |> Enum.filter(&File.regular?/1)
       |> Enum.reject(&excluded_path?/1)
@@ -115,13 +114,21 @@ defmodule Rlm.Context.Loader do
 
     cond do
       matches == [] ->
-        {:error, "No files matched glob #{pattern}."}
+        {:error, "No files matched glob #{original_pattern}."}
 
       length(matches) > settings.max_context_files ->
-        {:error, "Glob #{pattern} exceeds the #{settings.max_context_files} file safety limit."}
+        {:error, "Glob #{original_pattern} exceeds the #{settings.max_context_files} file safety limit."}
 
       true ->
         load_many(Enum.map(matches, &{:path, &1}), settings)
+    end
+  end
+
+  defp expand_from_caller(path) do
+    case System.get_env("RLM_CALLER_CWD") do
+      nil -> Path.expand(path)
+      "" -> Path.expand(path)
+      base_dir -> Path.expand(path, base_dir)
     end
   end
 

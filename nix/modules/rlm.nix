@@ -3,6 +3,7 @@ self:
 
 let
   cfg = config.programs.rlm;
+  defaultStorageDir = "${config.xdg.stateHome}/rlm/runs";
 
   renderValue = value:
     if value == null then
@@ -18,26 +19,14 @@ let
 
   apiKeyExpr = ''File.read!("${cfg.apiKeyFile}") |> String.trim()'';
 
+  optionalSetting = name: value: defaultValue:
+    lib.optionalString (value != defaultValue) "\n  ${name}: ${renderValue value}";
+
   configText = ''
     import Config
 
     config :rlm, Rlm.RLM.Settings,
-      provider: :openai,
-      model: ${renderValue cfg.model},
-      sub_model: ${renderValue cfg.subModel},
-      api_key: ${apiKeyExpr},
-      openai_base_url: ${renderValue cfg.openaiBaseUrl},
-      request_timeout: ${renderValue cfg.requestTimeout},
-      runtime_command: ${renderValue cfg.runtimeCommand},
-      max_iterations: ${renderValue cfg.maxIterations},
-      max_depth: 1,
-      max_sub_queries: ${renderValue cfg.maxSubQueries},
-      truncate_length: ${renderValue cfg.truncateLength},
-      metadata_preview_lines: ${renderValue cfg.metadataPreviewLines},
-      max_context_bytes: ${renderValue cfg.maxContextBytes},
-      max_context_files: ${renderValue cfg.maxContextFiles},
-      max_slice_chars: ${renderValue cfg.maxSliceChars},
-      storage_dir: ${renderValue cfg.storageDir}
+      api_key: ${apiKeyExpr}${optionalSetting "model" cfg.model "gpt-4o-mini"}${optionalSetting "sub_model" cfg.subModel null}${optionalSetting "openai_base_url" cfg.openaiBaseUrl "https://api.openai.com/v1"}${optionalSetting "request_timeout" cfg.requestTimeout 60000}${optionalSetting "runtime_command" cfg.runtimeCommand [ "python3" ]}${optionalSetting "max_iterations" cfg.maxIterations 12}${optionalSetting "max_sub_queries" cfg.maxSubQueries 24}${optionalSetting "truncate_length" cfg.truncateLength 5000}${optionalSetting "metadata_preview_lines" cfg.metadataPreviewLines 12}${optionalSetting "max_context_bytes" cfg.maxContextBytes (10 * 1024 * 1024)}${optionalSetting "max_context_files" cfg.maxContextFiles 100}${optionalSetting "max_slice_chars" cfg.maxSliceChars 4000}${optionalSetting "storage_dir" cfg.storageDir defaultStorageDir}
 
     ${cfg.extraConfig}
   '';
@@ -85,7 +74,7 @@ in
 
     runtimeCommand = lib.mkOption {
       type = lib.types.listOf lib.types.str;
-      default = [ "${pkgs.python3}/bin/python3" ];
+      default = [ "python3" ];
       description = "Command used to start the persistent Python REPL runtime.";
     };
 
@@ -133,7 +122,7 @@ in
 
     storageDir = lib.mkOption {
       type = lib.types.str;
-      default = "${config.xdg.dataHome}/rlm/runs";
+      default = defaultStorageDir;
       description = "Directory where run trajectories are stored.";
     };
 

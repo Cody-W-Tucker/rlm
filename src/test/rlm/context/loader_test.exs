@@ -33,6 +33,23 @@ defmodule Rlm.Context.LoaderTest do
     assert length(bundle.entries) == 2
   end
 
+  test "loads relative paths from caller cwd when provided", %{tmp: tmp, settings: settings} do
+    previous_cwd = System.get_env("RLM_CALLER_CWD")
+    on_exit(fn ->
+      if previous_cwd do
+        System.put_env("RLM_CALLER_CWD", previous_cwd)
+      else
+        System.delete_env("RLM_CALLER_CWD")
+      end
+    end)
+
+    File.write!(Path.join(tmp, "relative.txt"), "relative")
+    System.put_env("RLM_CALLER_CWD", tmp)
+
+    assert {:ok, bundle} = Loader.load({:path, "relative.txt"}, settings)
+    assert Enum.map(bundle.entries, &Path.basename(&1.label)) == ["relative.txt"]
+  end
+
   test "loads url context", %{settings: settings} do
     bypass = Bypass.open()
 
