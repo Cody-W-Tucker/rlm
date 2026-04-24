@@ -76,6 +76,8 @@ defmodule Rlm.RLM.Engine do
          {:ok, code} <- extract_code(root_response.text),
          {:ok, exec_result} <- PythonRepl.execute(repl, code) do
       emit(opts[:on_event], %{type: :generated_code, iteration: iteration, code: code})
+      update_best_answer(tracker, exec_result)
+      emit_iteration_output(opts[:on_event], iteration, exec_result)
 
       record = %{
         iteration: iteration,
@@ -157,7 +159,13 @@ defmodule Rlm.RLM.Engine do
   defp start_tracker do
     {:ok, tracker} =
       Agent.start_link(fn ->
-        %{total_sub_queries: 0, input_tokens: 0, output_tokens: 0}
+        %{
+          total_sub_queries: 0,
+          input_tokens: 0,
+          output_tokens: 0,
+          best_answer_so_far: nil,
+          best_answer_reason: nil
+        }
       end)
 
     tracker
@@ -174,6 +182,28 @@ defmodule Rlm.RLM.Engine do
   end
 
   defp tracker_get(tracker, key), do: Agent.get(tracker, &Map.fetch!(&1, key))
+
+  defp update_best_answer(tracker, exec_result) do
+    cond do
+      exec_result.has_final and is_binary(exec_result.final_value) and
+          String.trim(exec_result.final_value) != "" ->
+        put_best_answer(tracker, exec_result.final_value, :final_value)
+
+      String.trim(exec_result.stdout) != "" ->
+        put_best_answer(tracker, exec_result.stdout, :stdout)
+
+      true ->
+        :ok
+    end
+  end
+
+  defp put_best_answer(tracker, answer, reason) do
+    trimmed = String.trim(answer)
+
+    Agent.update(tracker, fn state ->
+      %{state | best_answer_so_far: trimmed, best_answer_reason: reason}
+    end)
+  end
 
   defp build_context_metadata(context_bundle, settings, prompt) do
     context = context_bundle.text
@@ -332,20 +362,71 @@ defmodule Rlm.RLM.Engine do
       input_tokens: tracker_get(tracker, :input_tokens),
       output_tokens: tracker_get(tracker, :output_tokens),
       depth: 0,
+      best_answer_reason: tracker_get(tracker, :best_answer_reason),
       iteration_records: records
     }
   end
 
   defp error_result(prompt, message, tracker, iterations \\ 0, records \\ []) do
+    answer = render_failure_answer(tracker_get(tracker, :best_answer_so_far), message)
+
     finalize_result(
       prompt,
-      "[RLM Error] #{message}",
+      answer,
       :provider_error,
       false,
       iterations,
       records,
       tracker
     )
+  end
+
+  defp render_failure_answer(nil, message) do
+    "The run could not finish because #{error_diagnosis(message)}"
+  end
+
+  defp render_failure_answer(best_answer, message) do
+    best_answer <>
+      "\n\nNote: this is the best partial answer available because #{error_diagnosis(message)}"
+  end
+
+  defp error_diagnosis(message) do
+    cond do
+      String.contains?(message, "timed out") ->
+        "the provider timed out. Retry with a narrower question or a longer timeout."
+
+      String.contains?(message, "Maximum sub-query limit") ->
+        "the run exhausted its sub-query budget. Retry with a narrower question or a higher sub-query limit."
+
+      String.contains?(message, "shutting down") or String.contains?(message, "Task supervisor") ->
+        "the runtime became unavailable during execution. Retry the command; if it persists, inspect the runtime startup path."
+
+      String.contains?(message, "Could not extract Python code") ->
+        "the provider returned a response the runtime could not execute. Retry the command or adjust the model/provider configuration."
+
+      true ->
+        "the provider or runtime failed before the run could complete. Retry the command; if it persists, inspect the provider and runtime configuration."
+    end
+  end
+
+  defp emit_iteration_output(on_event, iteration, exec_result) do
+    if exec_result.stdout != "" do
+      emit(on_event, %{
+        type: :iteration_output,
+        iteration: iteration,
+        stream: :stdout,
+        text: exec_result.stdout
+      })
+    end
+
+    if exec_result.stderr != "" do
+      emit(on_event, %{
+        type: :iteration_output,
+        iteration: iteration,
+        stream: :stderr,
+        text: exec_result.stderr
+      })
+    end
   end
 
   defp emit(nil, _event), do: :ok

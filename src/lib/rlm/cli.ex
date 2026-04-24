@@ -154,6 +154,9 @@ defmodule Rlm.CLI do
           %{type: :generated_code, iteration: iteration, code: code} ->
             "iteration #{iteration} generated code (#{String.length(code)} chars)"
 
+          %{type: :iteration_output, iteration: iteration, stream: stream, text: text} ->
+            "iteration #{iteration} #{stream}:\n#{String.trim_trailing(text)}"
+
           _ ->
             nil
         end

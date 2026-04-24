@@ -178,6 +178,14 @@ defmodule Rlm.CLI.Session do
   defp display_event(state, %{type: :sub_query_start, label: label, prompt: prompt}),
     do: state.io.puts.("[sub-query] #{label}: #{prompt}")
 
+  defp display_event(state, %{
+         type: :iteration_output,
+         iteration: iteration,
+         stream: stream,
+         text: text
+       }),
+       do: state.io.puts.("[iteration #{iteration} #{stream}]\n#{String.trim_trailing(text)}")
+
   defp display_event(_state, _event), do: :ok
 
   defp help_text do

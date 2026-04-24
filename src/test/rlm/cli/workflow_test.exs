@@ -38,4 +38,23 @@ defmodule Rlm.CLI.WorkflowTest do
     assert output =~ "Observed context"
     assert output =~ "session context"
   end
+
+  test "verbose cli prints iteration step descriptions" do
+    stderr =
+      capture_io(:stderr, fn ->
+        assert :ok =
+                 CLI.dispatch([
+                   "--provider",
+                   "mock",
+                   "--verbose",
+                   "--text",
+                   "workflow context",
+                   "what is loaded?"
+                 ])
+      end)
+
+    assert stderr =~ "iteration 1: what is loaded?"
+    assert stderr =~ "iteration 1 stdout:"
+    assert stderr =~ "workflow context"
+  end
 end
