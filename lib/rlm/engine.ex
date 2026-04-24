@@ -139,11 +139,12 @@ defmodule Rlm.Engine do
          iteration,
          root_response
        ) do
-    case extract_code(root_response.text) do
-      {:ok, code} ->
+    case extract_code_blocks(root_response.text) do
+      {:ok, code_blocks} ->
+        code = Enum.join(code_blocks, "\n\n")
         emit(opts[:on_event], %{type: :generated_code, iteration: iteration, code: code})
 
-        case PythonRepl.execute(repl, code) do
+        case execute_code_blocks(repl, code_blocks) do
           {:ok, exec_result} ->
             RunState.remember_best_answer_from_exec(run_state, exec_result)
             emit_iteration_output(opts[:on_event], iteration, exec_result)
@@ -329,12 +330,24 @@ defmodule Rlm.Engine do
     end
   end
 
-  defp extract_code(text) do
-    case Regex.run(~r/```(?:python|repl)?\s*\n([\s\S]*?)```/, text, capture: :all_but_first) do
-      [code] ->
-        {:ok, String.trim(code)}
+  defp extract_code_blocks(text) do
+    fenced_blocks =
+      Regex.scan(~r/```([a-zA-Z0-9_-]*)\s*\n([\s\S]*?)```/, text, capture: :all_but_first)
+      |> Enum.reduce([], fn [language, code], acc ->
+        trimmed = String.trim(code)
 
-      _ ->
+        if trimmed != "" and (language in ["python", "py", "repl"] or looks_like_python?(trimmed)) do
+          acc ++ [trimmed]
+        else
+          acc
+        end
+      end)
+
+    cond do
+      fenced_blocks != [] ->
+        {:ok, fenced_blocks}
+
+      true ->
         trimmed =
           text
           |> first_likely_fenced_block()
@@ -347,13 +360,61 @@ defmodule Rlm.Engine do
             {:error, "Could not extract Python code from provider response."}
 
           looks_like_python?(trimmed) ->
-            {:ok, trimmed}
+            {:ok, [trimmed]}
 
           true ->
             {:error, "Could not extract Python code from provider response."}
         end
     end
   end
+
+  defp execute_code_blocks(repl, [first | rest]) do
+    with {:ok, initial_result} <- PythonRepl.execute(repl, first) do
+      continue_code_blocks(repl, rest, initial_result)
+    end
+  end
+
+  defp continue_code_blocks(_repl, [], exec_result), do: {:ok, exec_result}
+
+  defp continue_code_blocks(_repl, _remaining, exec_result)
+       when exec_result.has_final or exec_result.status == :error do
+    {:ok, exec_result}
+  end
+
+  defp continue_code_blocks(repl, [code | rest], aggregate) do
+    case PythonRepl.execute(repl, code) do
+      {:ok, next_result} ->
+        merged = merge_exec_results(aggregate, next_result)
+
+        if merged.has_final or merged.status == :error do
+          {:ok, merged}
+        else
+          continue_code_blocks(repl, rest, merged)
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp merge_exec_results(left, right) do
+    %{
+      stdout: left.stdout <> right.stdout,
+      stderr: left.stderr <> right.stderr,
+      has_final: left.has_final or right.has_final,
+      final_value: right.final_value || left.final_value,
+      status: merge_exec_status(left.status, right.status),
+      error_kind: right.error_kind || left.error_kind,
+      recovery_kind: right.recovery_kind || left.recovery_kind,
+      details: Map.merge(left.details || %{}, right.details || %{})
+    }
+  end
+
+  defp merge_exec_status(:error, _), do: :error
+  defp merge_exec_status(_, :error), do: :error
+  defp merge_exec_status(:recovered, _), do: :recovered
+  defp merge_exec_status(_, :recovered), do: :recovered
+  defp merge_exec_status(_, _), do: :ok
 
   defp strip_fence_lines(text) do
     text

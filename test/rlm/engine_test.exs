@@ -153,6 +153,34 @@ defmodule Rlm.TestPlainPythonProvider do
   end
 end
 
+defmodule Rlm.TestMultiFenceProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(_history, _system_prompt, _settings) do
+    {:ok,
+     %{
+       text: """
+       ```python
+       value = "alpha"
+       print(value)
+       ```
+
+       ```python
+       value = value + " beta"
+       print(value)
+       FINAL(value)
+       ```
+       """,
+       input_tokens: 0,
+       output_tokens: 0
+     }}
+  end
+
+  def complete_subquery(_sub_context, _instruction, _settings) do
+    {:ok, %{text: "unused", input_tokens: 0, output_tokens: 0}}
+  end
+end
+
 defmodule Rlm.TestProseThenPythonProvider do
   @behaviour Rlm.Providers.Provider
 
@@ -423,6 +451,22 @@ defmodule Rlm.EngineTest do
     assert result.completed?
     assert result.answer == "plain python works"
     assert hd(result.iteration_records).status == :ok
+  end
+
+  test "executes multiple fenced python blocks sequentially in one iteration" do
+    settings = TestHelpers.settings(%{max_iterations: 1})
+    bundle = %{entries: [], text: "abcdef", bytes: 6}
+
+    assert {:ok, result} = Engine.run("summarize", bundle, settings, Rlm.TestMultiFenceProvider)
+
+    assert result.completed?
+    assert result.answer == "alpha beta"
+    assert length(result.iteration_records) == 1
+
+    record = hd(result.iteration_records)
+    assert record.stdout == "alpha\nalpha beta\n"
+    assert record.code =~ "value = \"alpha\""
+    assert record.code =~ "FINAL(value)"
   end
 
   test "salvages prose followed by plain python" do
