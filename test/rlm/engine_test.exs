@@ -235,6 +235,55 @@ defmodule Rlm.TestFileAccessProvider do
   end
 end
 
+defmodule Rlm.TestGrepFileAccessProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(_history, _system_prompt, _settings) do
+    {:ok,
+     %{
+       text: """
+       ```python
+       matches = grep_files("beta", limit=5)
+       first = matches[0]
+       print(first)
+       FINAL(first)
+       ```
+       """,
+       input_tokens: 0,
+       output_tokens: 0
+     }}
+  end
+
+  def complete_subquery(_sub_context, _instruction, _settings) do
+    {:ok, %{text: "unused", input_tokens: 0, output_tokens: 0}}
+  end
+end
+
+defmodule Rlm.TestFileShapeProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(_history, _system_prompt, _settings) do
+    {:ok,
+     %{
+       text: """
+       ```python
+       files = sample_files(2)
+       print(files)
+       preview = peek_file(files[0], limit=1)
+       print(preview)
+       FINAL(preview)
+       ```
+       """,
+       input_tokens: 0,
+       output_tokens: 0
+     }}
+  end
+
+  def complete_subquery(_sub_context, _instruction, _settings) do
+    {:ok, %{text: "unused", input_tokens: 0, output_tokens: 0}}
+  end
+end
+
 defmodule Rlm.EngineTest do
   use ExUnit.Case, async: false
 
@@ -333,6 +382,47 @@ defmodule Rlm.EngineTest do
     assert result.completed?
     assert result.answer == "1: alpha\n2: beta"
     assert hd(result.iteration_records).stdout =~ "note.txt"
+  end
+
+  test "grep_files returns natural rendered matches" do
+    tmp = TestHelpers.temp_dir("rlm-engine-grep")
+    on_exit(fn -> File.rm_rf!(tmp) end)
+
+    File.write!(Path.join(tmp, "note.txt"), "alpha\nbeta\n")
+    settings = TestHelpers.settings(%{max_iterations: 1})
+
+    assert {:ok, bundle} = Rlm.Context.Loader.load({:path, Path.join(tmp, "note.txt")}, settings)
+
+    assert {:ok, result} =
+             Engine.run("find beta", bundle, settings, Rlm.TestGrepFileAccessProvider)
+
+    assert result.completed?
+    assert result.answer =~ "note.txt:2: beta"
+
+    stdout = hd(result.iteration_records).stdout
+    assert stdout =~ "note.txt:2: beta"
+  end
+
+  test "sample_files and peek_file support file-shape scouting" do
+    tmp = TestHelpers.temp_dir("rlm-engine-shape")
+    on_exit(fn -> File.rm_rf!(tmp) end)
+
+    File.write!(Path.join(tmp, "a.txt"), "alpha\nline2\n")
+    File.write!(Path.join(tmp, "b.txt"), "beta\nline2\n")
+    settings = TestHelpers.settings(%{max_iterations: 1})
+
+    assert {:ok, bundle} = Rlm.Context.Loader.load({:path, tmp}, settings)
+
+    assert {:ok, result} =
+             Engine.run("inspect shape", bundle, settings, Rlm.TestFileShapeProvider)
+
+    assert result.completed?
+    assert result.answer == "1: alpha"
+
+    stdout = hd(result.iteration_records).stdout
+    assert stdout =~ "a.txt"
+    assert stdout =~ "b.txt"
+    assert stdout =~ "1: alpha"
   end
 
   test "iteration feedback steers silent sub-query results toward finalization" do

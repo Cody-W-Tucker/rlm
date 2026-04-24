@@ -28,7 +28,7 @@ defmodule Rlm.Engine.PolicyTest do
     assert metadata =~ "File-backed sources: 2"
     assert metadata =~ "Metadata budget: constant-size summary only"
     refute metadata =~ "/tmp/Week-09-2025.md"
-    refute metadata =~ "First "
+    refute metadata =~ "First 20 files"
   end
 
   test "system prompt requires scouting before chunking" do
@@ -52,8 +52,10 @@ defmodule Rlm.Engine.PolicyTest do
 
     assert prompt =~ "Make scouting goal-directed"
     assert prompt =~ "Do not spend iterations re-deriving filenames"
-    assert prompt =~ "optional signals, not the main retrieval strategy"
-    assert prompt =~ "Use `grep_files()` to narrow candidates"
+    assert prompt =~ "first decide whether filename/path structure is informative"
+    assert prompt =~ "use `sample_files()` or `list_files()`"
+    assert prompt =~ "use `grep_files()` with high-signal query terms"
+    assert prompt =~ "Prefer `peek_file()` before `read_file()`"
 
     assert prompt =~
              "prefer parallel sub-queries with `asyncio.gather(async_llm_query(...), ...)`"

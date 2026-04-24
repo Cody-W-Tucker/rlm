@@ -138,6 +138,36 @@ def list_files(limit=200, offset=0):
     return _file_sources[safe_offset : safe_offset + safe_limit]
 
 
+def sample_files(limit=20):
+    safe_limit = max(0, min(int(limit), 200))
+
+    if safe_limit == 0 or not _file_sources:
+        return []
+
+    if safe_limit >= len(_file_sources):
+        return list(_file_sources)
+
+    if safe_limit == 1:
+        return [_file_sources[0]]
+
+    last_index = len(_file_sources) - 1
+    step = last_index / (safe_limit - 1)
+    indices = []
+
+    for idx in range(safe_limit):
+        candidate = round(idx * step)
+        if not indices or candidate != indices[-1]:
+            indices.append(candidate)
+
+    while len(indices) < safe_limit:
+        candidate = min(last_index, indices[-1] + 1)
+        if candidate == indices[-1]:
+            break
+        indices.append(candidate)
+
+    return [_file_sources[idx] for idx in indices[:safe_limit]]
+
+
 def _normalize_allowed_path(path):
     if not isinstance(path, str):
         raise ValueError("path must be a string")
@@ -160,6 +190,10 @@ def read_file(path, offset=1, limit=200):
     return "\n".join(f"{idx}: {line}" for idx, line in enumerate(selected, start=safe_offset))
 
 
+def peek_file(path, limit=40, offset=1):
+    return read_file(path, offset=offset, limit=min(int(limit), 80))
+
+
 def grep_files(pattern, limit=50):
     compiled = re.compile(pattern)
     safe_limit = max(1, min(int(limit), 500))
@@ -169,7 +203,7 @@ def grep_files(pattern, limit=50):
         with open(path, "r", encoding="utf-8") as handle:
             for number, line in enumerate(handle, start=1):
                 if compiled.search(line):
-                    matches.append({"path": path, "line": number, "text": line.rstrip("\n")})
+                    matches.append(f"{path}:{number}: {line.rstrip(chr(10))}")
                     if len(matches) >= safe_limit:
                         return matches
 
@@ -182,7 +216,9 @@ def _refresh_user_ns():
             "__builtins__": __builtins__,
             "context": context,
             "list_files": list_files,
+            "sample_files": sample_files,
             "read_file": read_file,
+            "peek_file": peek_file,
             "grep_files": grep_files,
             "llm_query": llm_query,
             "async_llm_query": async_llm_query,

@@ -19,10 +19,10 @@ defmodule Rlm.Engine.Policy do
     access_hint =
       cond do
         lazy_file_count > 0 and inline_chars > 0 ->
-          "Inline text is available in `context`. Use `list_files()`, `read_file(path)`, and `grep_files(pattern)` for file-backed sources."
+          "Inline text is available in `context`. For file-backed sources, use `list_files()` or `sample_files()` to inspect file shape, `peek_file(path)` for light inspection, `read_file(path)` for deeper reads, and `grep_files(pattern)` for content search."
 
         lazy_file_count > 0 ->
-          "Context is file-backed. Use `list_files()`, `read_file(path)`, and `grep_files(pattern)` instead of assuming `context` contains the corpus."
+          "Context is file-backed. Use `list_files()` or `sample_files()` to inspect file shape, `peek_file(path)` for light inspection, `read_file(path)` for deeper reads, and `grep_files(pattern)` for content search instead of assuming `context` contains the corpus."
 
         true ->
           "Context is preloaded in `context`."
@@ -37,7 +37,7 @@ defmodule Rlm.Engine.Policy do
           "This looks medium-sized. Start with direct synthesis, then one narrow sub-query if needed, and only then consider small sequential chunking."
 
         lazy_file_count > 0 ->
-          "This looks file-backed. Scout by listing files, grep for high-signal terms from the query, read only the most promising files, and keep the working set small."
+          "This looks file-backed. First decide whether filename or path structure is informative. If it is, derive candidates from file shape. If it is not, derive candidates from content matches. Then recurse only on the top candidates and keep the working set small."
 
         true ->
           "This looks large. Structure the work carefully, keep chunk counts low, and maintain a best-so-far answer."
@@ -79,23 +79,28 @@ defmodule Rlm.Engine.Policy do
 
      Available in the REPL:
     1. `context`: preloaded inline context as a Python string. It may be empty when the input is file-backed.
-    2. `list_files(limit=200, offset=0)`: list file-backed sources available to inspect.
-    3. `read_file(path, offset=1, limit=200)`: read a specific allowed file with line numbers.
-    4. `grep_files(pattern, limit=50)`: regex search across allowed files and return matching file/line pairs.
-    5. `llm_query(sub_context, instruction)`: ask a sub-query over a chunk.
-    6. `async_llm_query(sub_context, instruction)`: async wrapper for parallel chunk work.
-    7. `FINAL(answer)` and `FINAL_VAR(value)`: finish with the final answer.
-    8. `SubqueryError`: exception raised when a sub-query fails.
+     2. `list_files(limit=200, offset=0)`: list file-backed sources available to inspect.
+    3. `sample_files(limit=20)`: evenly sample file-backed sources to quickly understand corpus shape.
+    4. `peek_file(path, offset=1, limit=40)`: lightly inspect a file with line numbers before deciding on a deeper read.
+    5. `read_file(path, offset=1, limit=200)`: read a specific allowed file with line numbers.
+    6. `grep_files(pattern, limit=50)`: regex search across allowed files and return rendered matches as `path:line: text` strings.
+    7. `llm_query(sub_context, instruction)`: ask a sub-query over a chunk.
+    8. `async_llm_query(sub_context, instruction)`: async wrapper for parallel chunk work.
+    9. `FINAL(answer)` and `FINAL_VAR(value)`: finish with the final answer.
+    10. `SubqueryError`: exception raised when a sub-query fails.
 
     Rules:
     - Respond with ONLY a Python code block.
     - Use print() for intermediate output.
     - Treat iterations, sub-queries, tokens, and latency as a strict budget.
-    - Always start with a scouting pass: inspect the context header, then use `print(len(context))` for preloaded text or `print(list_files())` for file-backed inputs before reading deeply.
+    - Always start with a scouting pass: inspect the context header, then use `print(len(context))` for preloaded text or `print(sample_files())` / `print(list_files())` for file-backed inputs before reading deeply.
     - Make scouting goal-directed: look for the content patterns most likely to answer the prompt, such as repeated themes, reflective passages, summaries, decision logs, section headers, or recurring motifs.
     - Do not spend iterations re-deriving filenames or source layout unless the task specifically depends on source structure.
-    - Treat file/path boundaries, week/day/date markers, and other separators as optional signals, not the main retrieval strategy.
-    - For file-backed inputs, avoid broad reads. Use `grep_files()` to narrow candidates, then `read_file()` only on the best matches.
+    - For file-backed inputs, first decide whether filename/path structure is informative for this query.
+    - If filename/path structure is informative, use `sample_files()` or `list_files()` to derive a small candidate set from file shape, then use `peek_file()` and `read_file()` on only the best candidates.
+    - If filename/path structure is not informative, use `grep_files()` with high-signal query terms to derive a small candidate set from file contents, then inspect only the best matches.
+    - Treat file/path boundaries, week/day/date markers, and other separators as signals when useful, but do not assume they are the main retrieval strategy.
+    - Avoid broad reads. Prefer `peek_file()` before `read_file()`, and recurse only on the top candidates instead of scanning everything.
     - Every `llm_query()` call is expensive. Minimize calls and prefer direct reasoning when the context header says the input is small or medium.
     - Do not chunk by default. Start with direct synthesis or a single targeted sub-query unless the context is clearly too large.
     - If you chunk, use the fewest chunks that could work and keep the code simple.
