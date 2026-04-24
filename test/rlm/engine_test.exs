@@ -28,6 +28,24 @@ defmodule Rlm.TestAsyncProvider do
   end
 end
 
+defmodule Rlm.TestTopLevelAwaitProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(_history, _system_prompt, _settings) do
+    {:ok,
+     %{
+       text:
+         "```python\nresult = await async_llm_query(context, \"Summarize this chunk\")\nFINAL(result)\n```",
+       input_tokens: 0,
+       output_tokens: 0
+     }}
+  end
+
+  def complete_subquery(_sub_context, _instruction, _settings) do
+    {:ok, %{text: "awaited async summary", input_tokens: 0, output_tokens: 0}}
+  end
+end
+
 defmodule Rlm.TestSubqueryErrorProvider do
   @behaviour Rlm.Providers.Provider
 
@@ -128,6 +146,24 @@ defmodule Rlm.TestPlainPythonProvider do
 
   def generate_code(_history, _system_prompt, _settings) do
     {:ok, %{text: "FINAL(\"plain python works\")", input_tokens: 0, output_tokens: 0}}
+  end
+
+  def complete_subquery(_sub_context, _instruction, _settings) do
+    {:ok, %{text: "unused", input_tokens: 0, output_tokens: 0}}
+  end
+end
+
+defmodule Rlm.TestUnterminatedFinalProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(_history, _system_prompt, _settings) do
+    {:ok,
+     %{
+       text:
+         "```python\nFINAL(\"\"\"\nRecovered final answer from malformed output\n\n- kept the markdown body\n```",
+       input_tokens: 0,
+       output_tokens: 0
+     }}
   end
 
   def complete_subquery(_sub_context, _instruction, _settings) do
@@ -249,6 +285,7 @@ defmodule Rlm.EngineTest do
 
     assert result.completed?
     assert result.answer == "plain python works"
+    assert hd(result.iteration_records).status == :ok
   end
 
   test "uses successful silent sub-query text as the best partial answer" do
@@ -288,6 +325,23 @@ defmodule Rlm.EngineTest do
     assert result.total_sub_queries == 1
   end
 
+  test "uses async wrapper fallback for top-level await" do
+    settings = TestHelpers.settings(%{max_iterations: 1, max_sub_queries: 2})
+    bundle = %{entries: [], text: "abcdef", bytes: 6}
+
+    assert {:ok, result} =
+             Engine.run("summarize", bundle, settings, Rlm.TestTopLevelAwaitProvider)
+
+    assert result.completed?
+    assert result.answer == "awaited async summary"
+
+    record = hd(result.iteration_records)
+    assert record.status == :recovered
+    assert record.recovery_kind == :async_wrapper
+    assert record.error_kind == nil
+    assert record.details["compile_stage"] == "async_wrapper"
+  end
+
   test "runs async_llm_query calls in parallel with asyncio gather" do
     settings = TestHelpers.settings(%{max_iterations: 2, max_sub_queries: 4})
     bundle = %{entries: [], text: "abcdef", bytes: 6}
@@ -302,6 +356,28 @@ defmodule Rlm.EngineTest do
     assert result.answer == "left summary | right summary"
     assert result.total_sub_queries == 2
     assert elapsed < 450
+  end
+
+  test "recovers an unterminated triple-quoted FINAL body" do
+    settings = TestHelpers.settings(%{max_iterations: 1})
+    bundle = %{entries: [], text: "abcdef", bytes: 6}
+
+    assert {:ok, result} =
+             Engine.run("summarize", bundle, settings, Rlm.TestUnterminatedFinalProvider)
+
+    assert result.completed?
+
+    assert result.answer ==
+             "Recovered final answer from malformed output\n\n- kept the markdown body"
+
+    record = hd(result.iteration_records)
+    assert record.has_final
+    assert record.final_value == result.answer
+    assert record.stderr == ""
+    assert record.status == :recovered
+    assert record.error_kind == :syntax_unterminated_triple_quote
+    assert record.recovery_kind == :salvaged_unterminated_final
+    assert record.details["compile_stage"] == "direct"
   end
 
   test "returns the best partial answer instead of a raw internal error" do

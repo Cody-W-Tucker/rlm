@@ -9,3 +9,5 @@ erl_crash.dump
 rlm_ali-*.tar
 /tmp/
 .elixir_ls/
+
+result/

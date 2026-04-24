@@ -26,9 +26,14 @@ defmodule Rlm.Engine.Failure do
   end
 
   def from_exec_result(exec_result) do
+    status = Map.get(exec_result, :status, :ok)
+    error_kind = Map.get(exec_result, :error_kind)
     stderr = String.trim(exec_result.stderr || "")
 
     cond do
+      status == :error and is_atom(error_kind) ->
+        classify_runtime_exec(exec_result)
+
       stderr == "" ->
         nil
 
@@ -40,6 +45,37 @@ defmodule Rlm.Engine.Failure do
 
       true ->
         nil
+    end
+  end
+
+  defp classify_runtime_exec(exec_result) do
+    message =
+      exec_result.stderr
+      |> to_string()
+      |> String.trim()
+      |> case do
+        "" -> format_runtime_exec_message(exec_result)
+        stderr -> stderr
+      end
+
+    case exec_result.error_kind do
+      :subquery_error ->
+        classify_subquery(message)
+
+      :async_wrapper_syntax_error ->
+        build(:async_failed, :runtime, message, true)
+
+      :syntax_unterminated_triple_quote ->
+        build(:runtime_finalization_error, :runtime, message, true)
+
+      :syntax_error ->
+        build(:runtime_syntax_error, :runtime, message, true)
+
+      :runtime_exception ->
+        classify_runtime(message)
+
+      _ ->
+        classify_runtime(message)
     end
   end
 
@@ -94,6 +130,23 @@ defmodule Rlm.Engine.Failure do
     end
   end
 
+  defp format_runtime_exec_message(exec_result) do
+    detail_message =
+      get_in(exec_result, [:details, "message"]) || get_in(exec_result, [:details, :message])
+
+    base =
+      case exec_result.error_kind do
+        nil -> "Runtime execution failed."
+        kind -> "Runtime execution failed with #{kind}."
+      end
+
+    if is_binary(detail_message) and detail_message != "" do
+      base <> " " <> detail_message
+    else
+      base
+    end
+  end
+
   defp build(class, source, message, recoverable) do
     %__MODULE__{
       class: class,
@@ -144,6 +197,14 @@ defmodule Rlm.Engine.Failure do
   defp advice_for(:async_failed),
     do:
       "the async strategy failed. Fall back to direct reasoning or one narrow sequential sub-query."
+
+  defp advice_for(:runtime_finalization_error),
+    do:
+      "the finalization step was malformed. Reuse the best available answer text and emit a simpler FINAL() call."
+
+  defp advice_for(:runtime_syntax_error),
+    do:
+      "the generated Python had a syntax problem before it could run. Simplify the code and avoid repeating the same structure."
 
   defp advice_for(:python_exec_error),
     do:

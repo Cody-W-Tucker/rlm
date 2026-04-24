@@ -205,11 +205,29 @@ defmodule Rlm.Runtime.PythonRepl do
        stdout: Map.get(message, "stdout", ""),
        stderr: Map.get(message, "stderr", ""),
        has_final: Map.get(message, "has_final", false),
-       final_value: Map.get(message, "final_value")
+       final_value: Map.get(message, "final_value"),
+       status: normalize_exec_status(Map.get(message, "status")),
+       error_kind: normalize_exec_kind(Map.get(message, "error_kind")),
+       recovery_kind: normalize_exec_kind(Map.get(message, "recovery_kind")),
+       details: Map.get(message, "details", %{})
      }}
   end
 
   defp normalize_message(_type, message), do: {:ok, message}
+
+  defp normalize_exec_status("recovered"), do: :recovered
+  defp normalize_exec_status("error"), do: :error
+  defp normalize_exec_status(_), do: :ok
+
+  defp normalize_exec_kind(nil), do: nil
+
+  defp normalize_exec_kind(kind) when is_binary(kind) do
+    kind
+    |> String.replace("-", "_")
+    |> String.to_atom()
+  end
+
+  defp normalize_exec_kind(kind), do: kind
 
   defp normalize_task_result({:ok, %{text: text}}), do: %{status: "ok", text: text}
 

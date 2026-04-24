@@ -4,6 +4,7 @@ defmodule Rlm.Engine do
   alias Rlm.Engine.Failure
   alias Rlm.Engine.Policy
   alias Rlm.Engine.Recovery
+  alias Rlm.Engine.RuntimeOutcome
   alias Rlm.Engine.RunState
   alias Rlm.Providers.RequestManager
   alias Rlm.Settings
@@ -148,19 +149,23 @@ defmodule Rlm.Engine do
               stdout: exec_result.stdout,
               stderr: exec_result.stderr,
               has_final: exec_result.has_final,
-              final_value: exec_result.final_value
+              final_value: exec_result.final_value,
+              status: exec_result.status,
+              error_kind: exec_result.error_kind,
+              recovery_kind: exec_result.recovery_kind,
+              details: exec_result.details
             }
 
             next_records = records ++ [record]
 
-            cond do
-              exec_result.has_final and is_binary(exec_result.final_value) ->
-                RunState.remember_best_answer(run_state, exec_result.final_value, :final_value)
+            case RuntimeOutcome.classify(exec_result) do
+              {:finalized, final_answer} ->
+                RunState.remember_best_answer(run_state, final_answer, :final_value)
 
                 {:ok,
                  finalize_result(
                    prompt,
-                   exec_result.final_value,
+                   final_answer,
                    :completed,
                    true,
                    iteration,
@@ -168,7 +173,7 @@ defmodule Rlm.Engine do
                    run_state
                  )}
 
-              failure = Failure.from_exec_result(exec_result) ->
+              {:recoverable_failure, failure} ->
                 recovery_history = history ++ [%{role: "assistant", content: root_response.text}]
 
                 handle_failure(
@@ -184,7 +189,23 @@ defmodule Rlm.Engine do
                   iteration
                 )
 
-              true ->
+              {:unrecoverable_failure, failure} ->
+                recovery_history = history ++ [%{role: "assistant", content: root_response.text}]
+
+                handle_failure(
+                  prompt,
+                  failure,
+                  settings,
+                  provider_module,
+                  repl,
+                  run_state,
+                  opts,
+                  recovery_history,
+                  next_records,
+                  iteration
+                )
+
+              :continue ->
                 next_history =
                   history ++
                     [
