@@ -36,7 +36,13 @@
       packages = forEachSupportedSystem (
         { pkgs }:
         let
-          package = import ./nix/packages/rlm.nix { inherit pkgs; };
+          package = import ./nix/packages/rlm.nix {
+            inherit pkgs;
+            src = builtins.path {
+              path = ./.;
+              name = "rlm-source";
+            };
+          };
         in
         {
           default = package;

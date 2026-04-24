@@ -1,8 +1,5 @@
-{ pkgs }:
+{ pkgs, src }:
 
-let
-  srcDir = ../../src;
-in
 pkgs.writeShellApplication {
   name = "rlm";
 
@@ -14,7 +11,7 @@ pkgs.writeShellApplication {
     state_root="''${XDG_STATE_HOME:-$HOME/.local/state}/rlm/package"
     project_dir="$state_root/project"
     source_marker="$project_dir/.rlm-source"
-    bundled_src='${srcDir}'
+    bundled_src='${src}'
 
     mkdir -p "$state_root"
 
