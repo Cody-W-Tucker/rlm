@@ -2,7 +2,14 @@
 
 This repository contains a Nix-first Elixir implementation of a Recursive Language Model CLI.
 
-The active application code lives in `src/`.
+The Mix project lives in `src/`. Inside it, the code is organized by system boundary so the main flow is easy to follow:
+
+- `lib/rlm/cli.ex` and `lib/rlm/cli/`: CLI entrypoints
+- `lib/rlm/engine.ex` and `lib/rlm/engine/`: orchestration, policy, recovery, and run state
+- `lib/rlm/context/`: context loading
+- `lib/rlm/runtime/`: Python runtime bridge
+- `lib/rlm/providers/`: provider behavior and implementations
+- `lib/rlm/storage/`: saved run artifacts
 
 Quick start:
 

@@ -3,7 +3,7 @@ defmodule Rlm.Providers.OpenAI do
 
   @behaviour Rlm.Providers.Provider
 
-  alias Rlm.RLM.Settings
+  alias Rlm.Settings
 
   @impl true
   def generate_code(history, system_prompt, %Settings{} = settings) do

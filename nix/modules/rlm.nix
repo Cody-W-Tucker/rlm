@@ -25,7 +25,7 @@ let
   configText = ''
     import Config
 
-    config :rlm, Rlm.RLM.Settings,
+    config :rlm, Rlm.Settings,
       api_key: ${apiKeyExpr}${optionalSetting "model" cfg.model "gpt-4o-mini"}${optionalSetting "sub_model" cfg.subModel null}${optionalSetting "openai_base_url" cfg.openaiBaseUrl "https://api.openai.com/v1"}${optionalSetting "request_timeout" cfg.requestTimeout 60000}${optionalSetting "runtime_command" cfg.runtimeCommand [ "python3" ]}${optionalSetting "max_iterations" cfg.maxIterations 12}${optionalSetting "max_sub_queries" cfg.maxSubQueries 24}${optionalSetting "truncate_length" cfg.truncateLength 5000}${optionalSetting "metadata_preview_lines" cfg.metadataPreviewLines 12}${optionalSetting "max_context_bytes" cfg.maxContextBytes (10 * 1024 * 1024)}${optionalSetting "max_context_files" cfg.maxContextFiles 100}${optionalSetting "max_slice_chars" cfg.maxSliceChars 4000}${optionalSetting "storage_dir" cfg.storageDir defaultStorageDir}
 
     ${cfg.extraConfig}

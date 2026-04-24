@@ -1,4 +1,4 @@
-defmodule Rlm.RLM.RunState do
+defmodule Rlm.Engine.RunState do
   @moduledoc "Mutable run state for counters, recovery flags, and best-so-far answers."
 
   def start_link do

@@ -3,8 +3,8 @@ defmodule Rlm.CLI do
 
   alias Rlm.Context.Loader
   alias Rlm.Providers
-  alias Rlm.RLM.Engine
-  alias Rlm.RLM.Settings
+  alias Rlm.Engine
+  alias Rlm.Settings
   alias Rlm.Storage.RunStore
 
   @switches [

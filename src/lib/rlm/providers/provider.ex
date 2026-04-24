@@ -1,7 +1,7 @@
 defmodule Rlm.Providers.Provider do
   @moduledoc "Behavior for model providers used by the RLM loop."
 
-  alias Rlm.RLM.Settings
+  alias Rlm.Settings
 
   @type completion :: %{
           required(:text) => String.t(),

@@ -1,4 +1,4 @@
-defmodule Rlm.RLM.Policy do
+defmodule Rlm.Engine.Policy do
   @moduledoc "Prompt and iteration policy for the RLM engine."
 
   def context_metadata(context_bundle, settings, prompt) do

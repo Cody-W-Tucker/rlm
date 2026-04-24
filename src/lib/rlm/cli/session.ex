@@ -2,8 +2,8 @@ defmodule Rlm.CLI.Session do
   @moduledoc "Interactive CLI session with persistent context and slash commands."
 
   alias Rlm.Context.Loader
-  alias Rlm.RLM.Engine
-  alias Rlm.RLM.Settings
+  alias Rlm.Engine
+  alias Rlm.Settings
   alias Rlm.Storage.RunStore
 
   defstruct [:settings, :provider_module, :io, context_bundle: Loader.empty_bundle()]

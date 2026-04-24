@@ -1,7 +1,7 @@
 defmodule Rlm.Runtime.Primitives do
   @moduledoc "Helpers for inspecting context and executing normalized runtime actions."
 
-  alias Rlm.RLM.Settings
+  alias Rlm.Settings
 
   def preview(text, lines) do
     split = String.split(text, "\n")

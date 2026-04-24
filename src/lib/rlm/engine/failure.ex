@@ -1,4 +1,4 @@
-defmodule Rlm.RLM.Failure do
+defmodule Rlm.Engine.Failure do
   @moduledoc "Structured failure classification for provider, runtime, and budget errors."
 
   defstruct [:class, :source, :message, :recoverable, :advice]

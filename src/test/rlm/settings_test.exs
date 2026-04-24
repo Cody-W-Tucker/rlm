@@ -1,7 +1,7 @@
-defmodule Rlm.RLM.SettingsTest do
+defmodule Rlm.SettingsTest do
   use ExUnit.Case, async: false
 
-  alias Rlm.RLM.Settings
+  alias Rlm.Settings
 
   setup do
     app_env = Application.get_env(:rlm, Settings)

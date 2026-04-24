@@ -1,6 +1,6 @@
 import Config
 
-config :rlm, Rlm.RLM.Settings,
+config :rlm, Rlm.Settings,
   provider: :openai,
   model: "gpt-4o-mini",
   sub_model: nil,

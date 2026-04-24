@@ -1,7 +1,7 @@
-defmodule Rlm.RLM.Recovery do
+defmodule Rlm.Engine.Recovery do
   @moduledoc "Recovery policy that constrains the next move after a classified failure."
 
-  alias Rlm.RLM.Failure
+  alias Rlm.Engine.Failure
 
   def allowed?(%Failure{} = failure, run_state, settings, iteration) do
     failure.recoverable and not run_state.recovery_attempted? and

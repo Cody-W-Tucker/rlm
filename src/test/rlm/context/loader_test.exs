@@ -35,6 +35,7 @@ defmodule Rlm.Context.LoaderTest do
 
   test "loads relative paths from caller cwd when provided", %{tmp: tmp, settings: settings} do
     previous_cwd = System.get_env("RLM_CALLER_CWD")
+
     on_exit(fn ->
       if previous_cwd do
         System.put_env("RLM_CALLER_CWD", previous_cwd)

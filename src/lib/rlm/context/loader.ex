@@ -2,7 +2,7 @@ defmodule Rlm.Context.Loader do
   @moduledoc "Context loading for files, directories, globs, pasted text, and URLs."
 
   alias Rlm.Context.Entry
-  alias Rlm.RLM.Settings
+  alias Rlm.Settings
 
   @excluded_segments MapSet.new([".git", "_build", "deps", "node_modules"])
 
@@ -117,7 +117,8 @@ defmodule Rlm.Context.Loader do
         {:error, "No files matched glob #{original_pattern}."}
 
       length(matches) > settings.max_context_files ->
-        {:error, "Glob #{original_pattern} exceeds the #{settings.max_context_files} file safety limit."}
+        {:error,
+         "Glob #{original_pattern} exceeds the #{settings.max_context_files} file safety limit."}
 
       true ->
         load_many(Enum.map(matches, &{:path, &1}), settings)

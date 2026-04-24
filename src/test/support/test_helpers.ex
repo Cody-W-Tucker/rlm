@@ -1,5 +1,5 @@
 defmodule Rlm.TestHelpers do
-  alias Rlm.RLM.Settings
+  alias Rlm.Settings
 
   def temp_dir(prefix \\ "rlm-test") do
     path = Path.join(System.tmp_dir!(), "#{prefix}-#{System.unique_integer([:positive])}")

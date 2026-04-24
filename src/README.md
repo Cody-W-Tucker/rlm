@@ -2,6 +2,17 @@
 
 This directory contains the Elixir implementation of the Recursive Language Model CLI described in `python-example/`, adapted for a CLI-first, Nix-managed workflow.
 
+## Repo Shape
+
+The main code is organized by system boundary:
+
+- `lib/rlm/cli.ex` and `lib/rlm/cli/`: shell entrypoints
+- `lib/rlm/engine.ex` and `lib/rlm/engine/`: orchestration, policy, recovery, and run state
+- `lib/rlm/context/`: context loading
+- `lib/rlm/runtime/`: Python bridge and runtime helpers
+- `lib/rlm/providers/`: provider behavior and implementations
+- `lib/rlm/storage/`: persisted run artifacts
+
 ## Development Setup
 
 From the repository root:
@@ -88,7 +99,7 @@ Example `/etc/rlm/config.exs`:
 ```elixir
 import Config
 
-config :rlm, Rlm.RLM.Settings,
+config :rlm, Rlm.Settings,
   provider: :openai,
   model: "gpt-4o-mini",
   sub_model: "gpt-4o-mini",

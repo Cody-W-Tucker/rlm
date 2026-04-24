@@ -1,4 +1,4 @@
-defmodule Rlm.RLM.Settings do
+defmodule Rlm.Settings do
   @moduledoc "Validated runtime settings resolved from application config and explicit overrides."
 
   @enforce_keys [

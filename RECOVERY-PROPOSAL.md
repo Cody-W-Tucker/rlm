@@ -16,8 +16,8 @@ The target behavior is:
 
 The current codebase already has several important pieces in place:
 
-- The main orchestration loop is in `src/lib/rlm/rlm/engine.ex:7-128`.
-- Context-shape and budget-aware prompting now happens in `src/lib/rlm/rlm/engine.ex:178-281`.
+- The main orchestration loop is in `src/lib/rlm/engine.ex`.
+- Context-shape and budget-aware prompting now happens in `src/lib/rlm/engine/policy.ex`.
 - The Python bridge and sub-query plumbing live in `src/lib/rlm/runtime/python_repl.ex:11-259` and `src/priv/runtime.py:87-189`.
 - Runtime config imports now merge correctly in `src/config/runtime.exs:3-25`.
 
@@ -25,8 +25,8 @@ This is a good base, but the system still has a gap between "errors are surfaced
 
 The main issues in the current code are:
 
-- `Engine` still collapses failures into `error_result/5`, which returns a raw error string as the final answer (`src/lib/rlm/rlm/engine.ex:126-128`, `297-307`).
-- The tracker only stores token and sub-query counts, not recovery state or best-so-far answers (`src/lib/rlm/rlm/engine.ex:157-176`).
+- `Engine` still collapses failures into `error_result/5`, which returns a raw error string as the final answer (`src/lib/rlm/engine.ex`).
+- The tracker only stores token and sub-query counts, not recovery state or best-so-far answers (`src/lib/rlm/engine/run_state.ex`).
 - `PythonRepl` now fails fast on shutdown and supervisor loss, but those errors are still just text payloads, not structured recovery signals (`src/lib/rlm/runtime/python_repl.ex:214-259`).
 - The Python runtime still exposes async behavior through an `AwaitableString` shim, which is better than before but still awkward for natural `asyncio.gather(...)` usage (`src/priv/runtime.py:29-37`, `106-107`).
 
@@ -43,7 +43,7 @@ Problem:
 
 Proposal:
 
-- Introduce a small error classifier in Elixir, likely near `Rlm.RLM.Engine` or in a new `Rlm.RLM.Errors` module.
+- Introduce a small error classifier in Elixir, likely near `Rlm.Engine` or in a new `Rlm.Engine.Failure`-style module.
 - Normalize raw failures into categories such as:
   - `:provider_timeout`
   - `:provider_unavailable`
@@ -60,9 +60,9 @@ Why this aligns with the ideal behavior:
 
 Grounding in code:
 
-- `llm_query_handler/3` currently returns plain `{:error, message}` (`src/lib/rlm/rlm/engine.ex:131-141`).
+- `llm_query_handler/3` currently returns plain `{:error, message}` (`src/lib/rlm/engine.ex`).
 - `PythonRepl.normalize_task_result/1` converts failures into `[ERROR] ...` strings (`src/lib/rlm/runtime/python_repl.ex:214-217`).
-- `error_result/5` formats a single generic `[RLM Error] ...` answer (`src/lib/rlm/rlm/engine.ex:297-307`).
+- `error_result/5` formats a single generic `[RLM Error] ...` answer (`src/lib/rlm/engine.ex`).
 
 ### 1.2 Track Best-So-Far Answer in the Engine
 
@@ -92,8 +92,8 @@ Why this aligns with the ideal behavior:
 
 Grounding in code:
 
-- `start_tracker/0` currently only tracks `total_sub_queries`, `input_tokens`, and `output_tokens` (`src/lib/rlm/rlm/engine.ex:157-163`).
-- `build_iteration_feedback/4` has access to printed output and runtime errors, but none of that is persisted as a candidate answer (`src/lib/rlm/rlm/engine.ex:283-307` and `230-255`).
+- `start_tracker/0` currently only tracks `total_sub_queries`, `input_tokens`, and `output_tokens` (`src/lib/rlm/engine/run_state.ex`).
+- `build_iteration_feedback/4` has access to printed output and runtime errors, but none of that is persisted as a candidate answer (`src/lib/rlm/engine.ex` and `src/lib/rlm/engine/policy.ex`).
 
 ### 1.3 Add One Recovery Iteration Path
 
@@ -123,8 +123,8 @@ Why this aligns with the ideal behavior:
 
 Grounding in code:
 
-- `execute_iterations/8` already builds incremental history and feeds back runtime output (`src/lib/rlm/rlm/engine.ex:104-124`).
-- The natural extension is to add a recovery feedback branch instead of going straight to `error_result/5` (`src/lib/rlm/rlm/engine.ex:126-128`).
+- `execute_iterations/8` already builds incremental history and feeds back runtime output (`src/lib/rlm/engine.ex`).
+- The natural extension is to add a recovery feedback branch instead of going straight to `error_result/5` (`src/lib/rlm/engine.ex`).
 
 ### 1.4 Add Run-Level Strategy Memory
 
@@ -149,7 +149,7 @@ Why this aligns with the ideal behavior:
 
 Grounding in code:
 
-- `build_system_prompt/3` already includes budget state and strategy rules (`src/lib/rlm/rlm/engine.ex:233-281`).
+- `build_system_prompt/3` already includes budget state and strategy rules (`src/lib/rlm/engine/policy.ex`).
 - It is the right place to expose run-level constraints once the engine tracks them.
 
 ### 1.5 Improve Final Error Rendering
@@ -171,7 +171,7 @@ Example target output:
 
 Grounding in code:
 
-- `error_result/5` is currently the main place to change (`src/lib/rlm/rlm/engine.ex:297-307`).
+- `error_result/5` is currently the main place to change (`src/lib/rlm/engine.ex`).
 
 ## 2. Next Feature Wave
 
@@ -198,7 +198,7 @@ Why this matters:
 Grounding in code:
 
 - Run artifacts already include `iteration_records`, `total_sub_queries`, token counts, and final answer data.
-- The change belongs near the result assembly and persistence path, starting from `finalize_result/7` in `src/lib/rlm/rlm/engine.ex:282-295`.
+- The change belongs near the result assembly and persistence path, starting from `finalize_result/7` in `src/lib/rlm/engine.ex`.
 
 ### 2.2 Support Medium-Context Policies as Product Behavior
 
@@ -220,7 +220,7 @@ Why this matters:
 
 Grounding in code:
 
-- The current context header already infers a `strategy_hint` from bytes and source count (`src/lib/rlm/rlm/engine.ex:202-212`).
+- The current context header already infers a `strategy_hint` from bytes and source count (`src/lib/rlm/engine/policy.ex`).
 - The feature change is to move that idea from prompt advice into actual engine policy.
 
 ### 2.3 Make Async Either Real or Intentionally Narrow

@@ -1,11 +1,11 @@
-defmodule Rlm.RLM.Engine do
+defmodule Rlm.Engine do
   @moduledoc "RLM orchestration loop over a persistent Python REPL."
 
-  alias Rlm.RLM.Failure
-  alias Rlm.RLM.Policy
-  alias Rlm.RLM.Recovery
-  alias Rlm.RLM.RunState
-  alias Rlm.RLM.Settings
+  alias Rlm.Engine.Failure
+  alias Rlm.Engine.Policy
+  alias Rlm.Engine.Recovery
+  alias Rlm.Engine.RunState
+  alias Rlm.Settings
   alias Rlm.Runtime.PythonRepl
 
   def run(prompt, context_bundle, %Settings{} = settings, provider_module, opts \\ []) do

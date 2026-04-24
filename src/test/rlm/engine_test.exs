@@ -73,10 +73,10 @@ defmodule Rlm.TestRecoveringProvider do
   end
 end
 
-defmodule Rlm.RLM.EngineTest do
+defmodule Rlm.EngineTest do
   use ExUnit.Case, async: false
 
-  alias Rlm.RLM.Engine
+  alias Rlm.Engine
   alias Rlm.TestHelpers
 
   defmodule PartialThenErrorProvider do
