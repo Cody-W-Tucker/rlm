@@ -2,15 +2,6 @@
 
 This repository contains a Nix-first Elixir implementation of a Recursive Language Model CLI.
 
-The Mix project lives at the repository root. The code is organized by system boundary so the main flow is easy to follow:
-
-- `lib/rlm/cli.ex` and `lib/rlm/cli/`: CLI entrypoints
-- `lib/rlm/engine.ex` and `lib/rlm/engine/`: orchestration, policy, recovery, and run state
-- `lib/rlm/context/`: context loading
-- `lib/rlm/runtime/`: Python runtime bridge
-- `lib/rlm/providers/`: provider behavior and implementations
-- `lib/rlm/storage/`: saved run artifacts
-
 Quick start:
 
 ```bash
@@ -102,6 +93,10 @@ config :rlm, Rlm.Settings,
   sub_model: "gpt-4o-mini",
   api_key: "sk-...",
   openai_base_url: "https://api.openai.com/v1",
+  connect_timeout: 5000,
+  first_byte_timeout: 30000,
+  idle_timeout: 15000,
+  total_timeout: 120000,
   runtime_command: ["/run/current-system/sw/bin/python3"],
   storage_dir: "/var/lib/rlm/runs"
 ```
@@ -113,6 +108,10 @@ Important settings:
 - `sub_model`
 - `api_key`
 - `openai_base_url`
+- `connect_timeout`
+- `first_byte_timeout`
+- `idle_timeout`
+- `total_timeout`
 - `runtime_command`
 - `max_iterations`
 - `max_sub_queries`

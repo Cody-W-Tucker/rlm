@@ -54,6 +54,26 @@ defmodule Rlm.Engine.RunState do
     end)
   end
 
+  def remember_partial_subquery(_state, _instruction, partial_text)
+      when partial_text in [nil, ""],
+      do: :ok
+
+  def remember_partial_subquery(state, instruction, partial_text) do
+    Agent.update(state, fn current ->
+      next = %{current | last_successful_subquery: instruction}
+
+      if is_binary(partial_text) and String.trim(partial_text) != "" do
+        %{
+          next
+          | best_answer_so_far: String.trim(partial_text),
+            best_answer_reason: :partial_subquery
+        }
+      else
+        next
+      end
+    end)
+  end
+
   def remember_best_answer_from_exec(state, exec_result) do
     cond do
       exec_result.has_final and is_binary(exec_result.final_value) and

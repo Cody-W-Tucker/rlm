@@ -1,19 +1,27 @@
 defmodule Rlm.Engine.Failure do
   @moduledoc "Structured failure classification for provider, runtime, and budget errors."
 
+  alias Rlm.Providers.RequestManager
+
   defstruct [:class, :source, :message, :recoverable, :advice]
 
   @type t :: %__MODULE__{}
 
   def from_stage(stage, reason) do
-    message = normalize_reason(reason)
+    case reason do
+      %RequestManager.Error{} = error ->
+        build(error.class, stage_source(stage), error.message, true)
 
-    case stage do
-      :startup -> build(:runtime_shutdown, :startup, message, false)
-      :provider -> classify_provider(message)
-      :subquery -> classify_subquery(message)
-      :response_format -> build(:provider_response_error, :response_format, message, true)
-      :runtime -> classify_runtime(message)
+      _ ->
+        message = normalize_reason(reason)
+
+        case stage do
+          :startup -> build(:runtime_shutdown, :startup, message, false)
+          :provider -> classify_provider(message)
+          :subquery -> classify_subquery(message)
+          :response_format -> build(:provider_response_error, :response_format, message, true)
+          :runtime -> classify_runtime(message)
+        end
     end
   end
 
@@ -96,6 +104,26 @@ defmodule Rlm.Engine.Failure do
   defp advice_for(:provider_timeout),
     do: "the provider timed out. Retry with a narrower question or a simpler strategy."
 
+  defp advice_for(:first_byte_timeout),
+    do:
+      "the provider never started responding before the first-byte deadline. Retry with a simpler or narrower request."
+
+  defp advice_for(:idle_timeout),
+    do:
+      "the provider started responding but then went silent too long. Reuse any partial answer and switch to a simpler strategy."
+
+  defp advice_for(:total_timeout),
+    do:
+      "the provider exceeded the total request deadline. Finalize from the best partial answer already collected."
+
+  defp advice_for(:connect_error),
+    do:
+      "the provider connection failed before a response could start. Retry after checking provider availability."
+
+  defp advice_for(:provider_http_error),
+    do:
+      "the provider returned an HTTP error response. Retry or inspect provider availability and credentials."
+
   defp advice_for(:provider_unavailable),
     do: "the provider was temporarily unavailable. Retry after a short delay."
 
@@ -127,6 +155,12 @@ defmodule Rlm.Engine.Failure do
 
   defp normalize_reason(reason) when is_binary(reason), do: reason
   defp normalize_reason(reason), do: inspect(reason)
+
+  defp stage_source(:provider), do: :provider
+  defp stage_source(:subquery), do: :subquery
+  defp stage_source(:response_format), do: :response_format
+  defp stage_source(:runtime), do: :runtime
+  defp stage_source(:startup), do: :startup
 
   defp timeout_message?(message) do
     String.contains?(message, ["timeout", ":timeout", "timed out"])

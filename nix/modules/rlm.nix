@@ -26,7 +26,7 @@ let
     import Config
 
     config :rlm, Rlm.Settings,
-      api_key: ${apiKeyExpr}${optionalSetting "model" cfg.model "gpt-4o-mini"}${optionalSetting "sub_model" cfg.subModel null}${optionalSetting "openai_base_url" cfg.openaiBaseUrl "https://api.openai.com/v1"}${optionalSetting "request_timeout" cfg.requestTimeout 60000}${optionalSetting "runtime_command" cfg.runtimeCommand [ "python3" ]}${optionalSetting "max_iterations" cfg.maxIterations 12}${optionalSetting "max_sub_queries" cfg.maxSubQueries 24}${optionalSetting "truncate_length" cfg.truncateLength 5000}${optionalSetting "metadata_preview_lines" cfg.metadataPreviewLines 12}${optionalSetting "max_context_bytes" cfg.maxContextBytes (10 * 1024 * 1024)}${optionalSetting "max_context_files" cfg.maxContextFiles 100}${optionalSetting "max_slice_chars" cfg.maxSliceChars 4000}${optionalSetting "storage_dir" cfg.storageDir defaultStorageDir}
+      api_key: ${apiKeyExpr}${optionalSetting "model" cfg.model "gpt-4o-mini"}${optionalSetting "sub_model" cfg.subModel null}${optionalSetting "openai_base_url" cfg.openaiBaseUrl "https://api.openai.com/v1"}${optionalSetting "connect_timeout" cfg.connectTimeout 5000}${optionalSetting "first_byte_timeout" cfg.firstByteTimeout 30000}${optionalSetting "idle_timeout" cfg.idleTimeout 15000}${optionalSetting "total_timeout" cfg.totalTimeout 120000}${optionalSetting "runtime_command" cfg.runtimeCommand [ "python3" ]}${optionalSetting "max_iterations" cfg.maxIterations 12}${optionalSetting "max_sub_queries" cfg.maxSubQueries 24}${optionalSetting "truncate_length" cfg.truncateLength 5000}${optionalSetting "metadata_preview_lines" cfg.metadataPreviewLines 12}${optionalSetting "max_context_bytes" cfg.maxContextBytes (10 * 1024 * 1024)}${optionalSetting "max_context_files" cfg.maxContextFiles 100}${optionalSetting "max_slice_chars" cfg.maxSliceChars 4000}${optionalSetting "storage_dir" cfg.storageDir defaultStorageDir}
 
     ${cfg.extraConfig}
   '';
@@ -66,10 +66,28 @@ in
       description = "OpenAI-compatible provider API base URL. Defaults to the vanilla OpenAI endpoint.";
     };
 
-    requestTimeout = lib.mkOption {
+    connectTimeout = lib.mkOption {
       type = lib.types.ints.positive;
-      default = 60000;
-      description = "OpenAI-compatible provider request timeout in milliseconds.";
+      default = 5000;
+      description = "Connection timeout in milliseconds for provider requests.";
+    };
+
+    firstByteTimeout = lib.mkOption {
+      type = lib.types.ints.positive;
+      default = 30000;
+      description = "How long to wait for the provider to start returning bytes.";
+    };
+
+    idleTimeout = lib.mkOption {
+      type = lib.types.ints.positive;
+      default = 15000;
+      description = "How long a streaming provider response may stay silent before the request is considered dead.";
+    };
+
+    totalTimeout = lib.mkOption {
+      type = lib.types.ints.positive;
+      default = 120000;
+      description = "Hard total deadline in milliseconds for a provider request, even if progress continues.";
     };
 
     runtimeCommand = lib.mkOption {

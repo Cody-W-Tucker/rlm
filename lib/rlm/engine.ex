@@ -5,6 +5,7 @@ defmodule Rlm.Engine do
   alias Rlm.Engine.Policy
   alias Rlm.Engine.Recovery
   alias Rlm.Engine.RunState
+  alias Rlm.Providers.RequestManager
   alias Rlm.Settings
   alias Rlm.Runtime.PythonRepl
 
@@ -291,7 +292,12 @@ defmodule Rlm.Engine do
         RunState.remember_subquery_success(run_state, instruction)
         {:ok, %{text: response.text}}
       else
-        {:error, reason} -> {:error, reason}
+        {:error, %RequestManager.Error{} = error} ->
+          RunState.remember_partial_subquery(run_state, instruction, error.partial_text)
+          {:error, RequestManager.format_error_for_runtime(error)}
+
+        {:error, reason} ->
+          {:error, reason}
       end
     end
   end

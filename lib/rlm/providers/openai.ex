@@ -3,6 +3,7 @@ defmodule Rlm.Providers.OpenAI do
 
   @behaviour Rlm.Providers.Provider
 
+  alias Rlm.Providers.RequestManager
   alias Rlm.Settings
 
   @impl true
@@ -44,45 +45,6 @@ defmodule Rlm.Providers.OpenAI do
 
     url = String.trim_trailing(settings.openai_base_url, "/") <> "/chat/completions"
 
-    with {:ok, %{status: status, body: response_body}} when status in 200..299 <-
-           Req.post(url,
-             finch: Rlm.Finch,
-             headers: headers,
-             json: body,
-             receive_timeout: settings.request_timeout
-           ),
-         {:ok, text} <- extract_content(response_body) do
-      {:ok,
-       %{
-         text: text,
-         raw: text,
-         input_tokens: get_in(response_body, ["usage", "prompt_tokens"]),
-         output_tokens: get_in(response_body, ["usage", "completion_tokens"])
-       }}
-    else
-      {:ok, %{status: status}} -> {:error, "provider request failed with HTTP #{status}"}
-      {:error, _} = error -> error
-    end
+    RequestManager.request_openai_chat(url, headers, body, settings)
   end
-
-  defp extract_content(%{"choices" => [%{"message" => %{"content" => content}} | _]})
-       when is_binary(content) do
-    {:ok, content}
-  end
-
-  defp extract_content(%{"choices" => [%{"message" => %{"content" => content}} | _]})
-       when is_list(content) do
-    text =
-      content
-      |> Enum.map(fn
-        %{"text" => text} -> text
-        %{"type" => "text", "text" => text} -> text
-        _ -> ""
-      end)
-      |> Enum.join()
-
-    {:ok, text}
-  end
-
-  defp extract_content(_), do: {:error, "provider response did not include message content"}
 end
