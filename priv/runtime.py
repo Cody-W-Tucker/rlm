@@ -53,6 +53,25 @@ class AwaitableQuery:
         return repr(self.result())
 
 
+class Hit:
+    def __init__(self, path, line, text):
+        self.path = path
+        self.line = line
+        self.text = text
+
+    def __str__(self):
+        return f"{self.path}:{self.line}: {self.text}"
+
+    def __repr__(self):
+        return str(self)
+
+
+class OpenedHit(Hit):
+    def __init__(self, path, line, text, preview):
+        super().__init__(path, line, text)
+        self.preview = preview
+
+
 def FINAL(value):
     global __final_result__
     __final_result__ = str(value)
@@ -194,6 +213,13 @@ def peek_file(path, limit=40, offset=1):
     return read_file(path, offset=offset, limit=min(int(limit), 80))
 
 
+def _match_preview(path, line, window):
+    before = max(0, int(window))
+    start = max(1, line - before)
+    limit = max(1, before * 2 + 1)
+    return peek_file(path, offset=start, limit=limit)
+
+
 def grep_files(pattern, limit=50):
     compiled = re.compile(pattern)
     safe_limit = max(1, min(int(limit), 500))
@@ -203,7 +229,25 @@ def grep_files(pattern, limit=50):
         with open(path, "r", encoding="utf-8") as handle:
             for number, line in enumerate(handle, start=1):
                 if compiled.search(line):
-                    matches.append(f"{path}:{number}: {line.rstrip(chr(10))}")
+                    matches.append(Hit(path, number, line.rstrip(chr(10))))
+                    if len(matches) >= safe_limit:
+                        return matches
+
+    return matches
+
+
+def grep_open(pattern, limit=10, window=12):
+    compiled = re.compile(pattern)
+    safe_limit = max(1, min(int(limit), 200))
+    safe_window = max(0, min(int(window), 80))
+    matches = []
+
+    for path in _file_sources:
+        with open(path, "r", encoding="utf-8") as handle:
+            for number, line in enumerate(handle, start=1):
+                text = line.rstrip(chr(10))
+                if compiled.search(line):
+                    matches.append(OpenedHit(path, number, text, _match_preview(path, number, safe_window)))
                     if len(matches) >= safe_limit:
                         return matches
 
@@ -220,6 +264,7 @@ def _refresh_user_ns():
             "read_file": read_file,
             "peek_file": peek_file,
             "grep_files": grep_files,
+            "grep_open": grep_open,
             "llm_query": llm_query,
             "async_llm_query": async_llm_query,
             "FINAL": FINAL,

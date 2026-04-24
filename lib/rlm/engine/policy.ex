@@ -19,10 +19,10 @@ defmodule Rlm.Engine.Policy do
     access_hint =
       cond do
         lazy_file_count > 0 and inline_chars > 0 ->
-          "Inline text is available in `context`. For file-backed sources, use `list_files()` or `sample_files()` to inspect file shape, `peek_file(path)` for light inspection, `read_file(path)` for deeper reads, and `grep_files(pattern)` for content search."
+          "Inline text is available in `context`. For file-backed sources, use `list_files()` or `sample_files()` to inspect file shape, `peek_file(path)` for light inspection, `read_file(path)` for deeper reads, `grep_files(pattern)` for reusable hits, and `grep_open(pattern)` for search-plus-preview."
 
         lazy_file_count > 0 ->
-          "Context is file-backed. Use `list_files()` or `sample_files()` to inspect file shape, `peek_file(path)` for light inspection, `read_file(path)` for deeper reads, and `grep_files(pattern)` for content search instead of assuming `context` contains the corpus."
+          "Context is file-backed. Use `list_files()` or `sample_files()` to inspect file shape, `peek_file(path)` for light inspection, `read_file(path)` for deeper reads, `grep_files(pattern)` for reusable hits, and `grep_open(pattern)` for search-plus-preview instead of assuming `context` contains the corpus."
 
         true ->
           "Context is preloaded in `context`."
@@ -83,11 +83,12 @@ defmodule Rlm.Engine.Policy do
     3. `sample_files(limit=20)`: evenly sample file-backed sources to quickly understand corpus shape.
     4. `peek_file(path, offset=1, limit=40)`: lightly inspect a file with line numbers before deciding on a deeper read.
     5. `read_file(path, offset=1, limit=200)`: read a specific allowed file with line numbers.
-    6. `grep_files(pattern, limit=50)`: regex search across allowed files and return rendered matches as `path:line: text` strings.
-    7. `llm_query(sub_context, instruction)`: ask a sub-query over a chunk.
-    8. `async_llm_query(sub_context, instruction)`: async wrapper for parallel chunk work.
-    9. `FINAL(answer)` and `FINAL_VAR(value)`: finish with the final answer.
-    10. `SubqueryError`: exception raised when a sub-query fails.
+    6. `grep_files(pattern, limit=50)`: regex search across allowed files and return reusable hit objects with `.path`, `.line`, `.text`, and string rendering as `path:line: text`.
+    7. `grep_open(pattern, limit=10, window=12)`: search across allowed files and return hit objects with `.path`, `.line`, `.text`, and `.preview` for immediate inspection.
+    8. `llm_query(sub_context, instruction)`: ask a sub-query over a chunk.
+    9. `async_llm_query(sub_context, instruction)`: async wrapper for parallel chunk work.
+    10. `FINAL(answer)` and `FINAL_VAR(value)`: finish with the final answer.
+    11. `SubqueryError`: exception raised when a sub-query fails.
 
     Rules:
     - Respond with ONLY a Python code block.
@@ -98,7 +99,7 @@ defmodule Rlm.Engine.Policy do
     - Do not spend iterations re-deriving filenames or source layout unless the task specifically depends on source structure.
     - For file-backed inputs, first decide whether filename/path structure is informative for this query.
     - If filename/path structure is informative, use `sample_files()` or `list_files()` to derive a small candidate set from file shape, then use `peek_file()` and `read_file()` on only the best candidates.
-    - If filename/path structure is not informative, use `grep_files()` with high-signal query terms to derive a small candidate set from file contents, then inspect only the best matches.
+    - If filename/path structure is not informative, use `grep_files()` with high-signal query terms to derive a small candidate set from file contents, or `grep_open()` when you want immediate previews around the best hits.
     - Treat file/path boundaries, week/day/date markers, and other separators as signals when useful, but do not assume they are the main retrieval strategy.
     - Avoid broad reads. Prefer `peek_file()` before `read_file()`, and recurse only on the top candidates instead of scanning everything.
     - Every `llm_query()` call is expensive. Minimize calls and prefer direct reasoning when the context header says the input is small or medium.

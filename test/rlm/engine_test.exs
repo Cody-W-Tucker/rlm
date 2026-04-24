@@ -153,6 +153,23 @@ defmodule Rlm.TestPlainPythonProvider do
   end
 end
 
+defmodule Rlm.TestProseThenPythonProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(_history, _system_prompt, _settings) do
+    {:ok,
+     %{
+       text: "I'll inspect the context first.\n\nanswer = \"salvaged from prose\"\nFINAL(answer)",
+       input_tokens: 0,
+       output_tokens: 0
+     }}
+  end
+
+  def complete_subquery(_sub_context, _instruction, _settings) do
+    {:ok, %{text: "unused", input_tokens: 0, output_tokens: 0}}
+  end
+end
+
 defmodule Rlm.TestUnterminatedFinalProvider do
   @behaviour Rlm.Providers.Provider
 
@@ -246,7 +263,35 @@ defmodule Rlm.TestGrepFileAccessProvider do
        matches = grep_files("beta", limit=5)
        first = matches[0]
        print(first)
-       FINAL(first)
+       print(first.path)
+       print(first.line)
+       print(first.text)
+       FINAL(first.path)
+       ```
+       """,
+       input_tokens: 0,
+       output_tokens: 0
+     }}
+  end
+
+  def complete_subquery(_sub_context, _instruction, _settings) do
+    {:ok, %{text: "unused", input_tokens: 0, output_tokens: 0}}
+  end
+end
+
+defmodule Rlm.TestGrepOpenProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(_history, _system_prompt, _settings) do
+    {:ok,
+     %{
+       text: """
+       ```python
+       hits = grep_open("beta", limit=2, window=1)
+       first = hits[0]
+       print(first)
+       print(first.preview)
+       FINAL(first.preview)
        ```
        """,
        input_tokens: 0,
@@ -355,6 +400,18 @@ defmodule Rlm.EngineTest do
     assert hd(result.iteration_records).status == :ok
   end
 
+  test "salvages prose followed by plain python" do
+    settings = TestHelpers.settings(%{max_iterations: 1})
+    bundle = %{entries: [], text: "abcdef", bytes: 6}
+
+    assert {:ok, result} =
+             Engine.run("summarize", bundle, settings, Rlm.TestProseThenPythonProvider)
+
+    assert result.completed?
+    assert result.answer == "salvaged from prose"
+    assert result.failure_history == []
+  end
+
   test "uses successful silent sub-query text as the best partial answer" do
     settings = TestHelpers.settings(%{max_iterations: 1, max_sub_queries: 2})
     bundle = %{entries: [], text: "abcdef", bytes: 6}
@@ -384,7 +441,7 @@ defmodule Rlm.EngineTest do
     assert hd(result.iteration_records).stdout =~ "note.txt"
   end
 
-  test "grep_files returns natural rendered matches" do
+  test "grep_files returns reusable hit objects" do
     tmp = TestHelpers.temp_dir("rlm-engine-grep")
     on_exit(fn -> File.rm_rf!(tmp) end)
 
@@ -397,10 +454,31 @@ defmodule Rlm.EngineTest do
              Engine.run("find beta", bundle, settings, Rlm.TestGrepFileAccessProvider)
 
     assert result.completed?
-    assert result.answer =~ "note.txt:2: beta"
+    assert result.answer =~ "note.txt"
 
     stdout = hd(result.iteration_records).stdout
     assert stdout =~ "note.txt:2: beta"
+    assert stdout =~ "note.txt"
+    assert stdout =~ "2"
+    assert stdout =~ "beta"
+  end
+
+  test "grep_open returns preview-ready hit objects" do
+    tmp = TestHelpers.temp_dir("rlm-engine-grep-open")
+    on_exit(fn -> File.rm_rf!(tmp) end)
+
+    File.write!(Path.join(tmp, "note.txt"), "alpha\nbeta\ngamma\n")
+    settings = TestHelpers.settings(%{max_iterations: 1})
+
+    assert {:ok, bundle} = Rlm.Context.Loader.load({:path, Path.join(tmp, "note.txt")}, settings)
+
+    assert {:ok, result} =
+             Engine.run("find beta", bundle, settings, Rlm.TestGrepOpenProvider)
+
+    assert result.completed?
+    assert result.answer =~ "1: alpha"
+    assert result.answer =~ "2: beta"
+    assert result.answer =~ "3: gamma"
   end
 
   test "sample_files and peek_file support file-shape scouting" do

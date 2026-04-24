@@ -55,6 +55,7 @@ defmodule Rlm.Engine.PolicyTest do
     assert prompt =~ "first decide whether filename/path structure is informative"
     assert prompt =~ "use `sample_files()` or `list_files()`"
     assert prompt =~ "use `grep_files()` with high-signal query terms"
+    assert prompt =~ "`grep_open()` when you want immediate previews"
     assert prompt =~ "Prefer `peek_file()` before `read_file()`"
 
     assert prompt =~
