@@ -88,8 +88,10 @@ defmodule Rlm.Engine.Policy do
     - Respond with ONLY a Python code block.
     - Use print() for intermediate output.
     - Treat iterations, sub-queries, tokens, and latency as a strict budget.
-    - Always start with a scouting pass: `print(len(context))`, inspect a small slice, and identify the likely structure before deeper analysis.
-    - During scouting, explicitly test simple heuristics such as file/path boundaries, week/day/date markers, repeated markdown headers, and other obvious separators.
+    - Always start with a scouting pass: `print(len(context))`, inspect a small slice, and identify the most useful content structure for answering the user's question.
+    - Make scouting goal-directed: look for the content patterns most likely to answer the prompt, such as repeated themes, reflective passages, summaries, decision logs, section headers, or recurring motifs.
+    - Do not spend iterations re-deriving filenames or source layout unless the task specifically depends on source structure.
+    - Treat file/path boundaries, week/day/date markers, and other separators as optional signals, not the main retrieval strategy.
     - Every `llm_query()` call is expensive. Minimize calls and prefer direct reasoning when the context header says the input is small or medium.
     - Do not chunk by default. Start with direct synthesis or a single targeted sub-query unless the context is clearly too large.
     - If you chunk, use the fewest chunks that could work and keep the code simple.

@@ -37,8 +37,13 @@ defmodule Rlm.Engine.PolicyTest do
     prompt = Policy.system_prompt(settings, 1, run_state)
 
     assert prompt =~ "Always start with a scouting pass: `print(len(context))`"
-    assert prompt =~ "file/path boundaries"
-    assert prompt =~ "week/day/date markers"
+
+    assert prompt =~
+             "identify the most useful content structure for answering the user's question"
+
+    assert prompt =~ "Make scouting goal-directed"
+    assert prompt =~ "Do not spend iterations re-deriving filenames"
+    assert prompt =~ "optional signals, not the main retrieval strategy"
 
     assert prompt =~
              "prefer parallel sub-queries with `asyncio.gather(async_llm_query(...), ...)`"
