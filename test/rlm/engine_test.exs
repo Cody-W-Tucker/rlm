@@ -135,6 +135,52 @@ defmodule Rlm.TestPlainPythonProvider do
   end
 end
 
+defmodule Rlm.TestSilentSubqueryProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(_history, _system_prompt, _settings) do
+    {:ok,
+     %{
+       text: "```python\nanswer = llm_query(context, \"Summarize this chunk\")\n```",
+       input_tokens: 0,
+       output_tokens: 0
+     }}
+  end
+
+  def complete_subquery(_sub_context, _instruction, _settings) do
+    {:ok, %{text: "silent subquery answer", input_tokens: 0, output_tokens: 0}}
+  end
+end
+
+defmodule Rlm.TestSilentSubqueryRecoveryProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(history, _system_prompt, _settings) do
+    if Enum.any?(
+         history,
+         &String.contains?(&1.content, "Candidate answer text from that sub-query:")
+       ) do
+      {:ok,
+       %{
+         text: "```python\nFINAL(answer)\n```",
+         input_tokens: 0,
+         output_tokens: 0
+       }}
+    else
+      {:ok,
+       %{
+         text: "```python\nanswer = llm_query(context, \"Summarize this chunk\")\n```",
+         input_tokens: 0,
+         output_tokens: 0
+       }}
+    end
+  end
+
+  def complete_subquery(_sub_context, _instruction, _settings) do
+    {:ok, %{text: "silent subquery answer", input_tokens: 0, output_tokens: 0}}
+  end
+end
+
 defmodule Rlm.EngineTest do
   use ExUnit.Case, async: false
 
@@ -203,6 +249,32 @@ defmodule Rlm.EngineTest do
 
     assert result.completed?
     assert result.answer == "plain python works"
+  end
+
+  test "uses successful silent sub-query text as the best partial answer" do
+    settings = TestHelpers.settings(%{max_iterations: 1, max_sub_queries: 2})
+    bundle = %{entries: [], text: "abcdef", bytes: 6}
+
+    assert {:ok, result} =
+             Engine.run("summarize", bundle, settings, Rlm.TestSilentSubqueryProvider)
+
+    assert result.status == :max_iterations
+    refute result.completed?
+    assert result.answer =~ "silent subquery answer"
+    assert result.best_answer_reason == :subquery_success
+    assert result.last_successful_subquery_result == "silent subquery answer"
+  end
+
+  test "iteration feedback steers silent sub-query results toward finalization" do
+    settings = TestHelpers.settings(%{max_iterations: 2, max_sub_queries: 2})
+    bundle = %{entries: [], text: "abcdef", bytes: 6}
+
+    assert {:ok, result} =
+             Engine.run("summarize", bundle, settings, Rlm.TestSilentSubqueryRecoveryProvider)
+
+    assert result.completed?
+    assert result.answer == "silent subquery answer"
+    assert result.total_sub_queries == 1
   end
 
   test "handles async_llm_query when model code forgets to await it" do

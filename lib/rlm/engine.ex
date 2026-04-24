@@ -289,7 +289,7 @@ defmodule Rlm.Engine do
            {:ok, response} <-
              provider_module.complete_subquery(sub_context, instruction, settings) do
         RunState.add_tokens(run_state, response)
-        RunState.remember_subquery_success(run_state, instruction)
+        RunState.remember_subquery_success(run_state, instruction, response.text)
         {:ok, %{text: response.text}}
       else
         {:error, %RequestManager.Error{} = error} ->
@@ -346,6 +346,7 @@ defmodule Rlm.Engine do
       recovery_flags: snapshot.recovery_flags,
       failure_history: snapshot.failure_history,
       last_successful_subquery: snapshot.last_successful_subquery,
+      last_successful_subquery_result: snapshot.last_successful_subquery_result,
       iteration_records: records
     }
   end

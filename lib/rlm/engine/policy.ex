@@ -126,18 +126,38 @@ defmodule Rlm.Engine.Policy do
         else: parts
 
     best_answer_note =
-      if run_state.best_answer_so_far do
-        "Best answer so far is available. Finalize if the next step does not add material value."
+      cond do
+        run_state.best_answer_reason == :subquery_success ->
+          "A sub-query already returned candidate answer text. Reuse it directly and finalize unless one cleanup pass adds clear value."
+
+        run_state.best_answer_so_far ->
+          "Best answer so far is available. Finalize if the next step does not add material value."
+
+        true ->
+          "No best-so-far answer has been captured yet."
+      end
+
+    subquery_candidate_note =
+      if exec_result.stdout == "" and exec_result.stderr == "" and not exec_result.has_final and
+           is_binary(run_state.last_successful_subquery_result) do
+        [
+          "The previous code made a successful sub-query but did not print or finalize its result.",
+          "Candidate answer text from that sub-query:",
+          truncate_output(run_state.last_successful_subquery_result, settings.truncate_length)
+        ]
+        |> Enum.join("\n")
       else
-        "No best-so-far answer has been captured yet."
+        nil
       end
 
     (parts ++
        [
          "Iteration #{iteration}/#{settings.max_iterations}. Sub-queries used: #{run_state.total_sub_queries}/#{settings.max_sub_queries}.",
          best_answer_note,
+         subquery_candidate_note,
          "Continue processing or call FINAL() when you have the answer."
        ])
+    |> Enum.reject(&is_nil/1)
     |> Enum.join("\n\n")
   end
 

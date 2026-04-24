@@ -30,6 +30,7 @@ defmodule Rlm.Storage.RunStore do
       recovery_flags: result[:recovery_flags],
       failure_history: result[:failure_history],
       last_successful_subquery: result[:last_successful_subquery],
+      last_successful_subquery_result: result[:last_successful_subquery_result],
       mode: Keyword.get(opts, :mode, :interactive),
       context_sources: Enum.map(context_bundle.entries, & &1.label),
       context_bytes: context_bundle.bytes,

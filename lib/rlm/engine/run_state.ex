@@ -10,6 +10,7 @@ defmodule Rlm.Engine.RunState do
         best_answer_so_far: nil,
         best_answer_reason: nil,
         last_successful_subquery: nil,
+        last_successful_subquery_result: nil,
         recovery_attempted?: false,
         recovery_flags: %{
           recovery_mode: false,
@@ -48,9 +49,21 @@ defmodule Rlm.Engine.RunState do
     end)
   end
 
-  def remember_subquery_success(state, instruction) do
+  def remember_subquery_success(state, instruction, result_text) do
     Agent.update(state, fn current ->
-      %{current | last_successful_subquery: instruction}
+      trimmed = if is_binary(result_text), do: String.trim(result_text), else: ""
+
+      next = %{
+        current
+        | last_successful_subquery: instruction,
+          last_successful_subquery_result: if(trimmed == "", do: nil, else: trimmed)
+      }
+
+      if trimmed == "" do
+        next
+      else
+        %{next | best_answer_so_far: trimmed, best_answer_reason: :subquery_success}
+      end
     end)
   end
 
