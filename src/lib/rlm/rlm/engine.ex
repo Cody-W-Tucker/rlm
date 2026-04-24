@@ -1,34 +1,51 @@
 defmodule Rlm.RLM.Engine do
-  @moduledoc "Paper-style RLM loop around a persistent Python REPL."
+  @moduledoc "RLM orchestration loop over a persistent Python REPL."
 
+  alias Rlm.RLM.Failure
+  alias Rlm.RLM.Policy
+  alias Rlm.RLM.Recovery
+  alias Rlm.RLM.RunState
   alias Rlm.RLM.Settings
   alias Rlm.Runtime.PythonRepl
 
   def run(prompt, context_bundle, %Settings{} = settings, provider_module, opts \\ []) do
-    tracker = start_tracker()
+    {:ok, run_state} = RunState.start_link()
 
-    with {:ok, repl} <- PythonRepl.start(settings, opts),
-         :ok <-
-           PythonRepl.set_handler(repl, llm_query_handler(provider_module, settings, tracker)),
-         :ok <- PythonRepl.set_context(repl, context_bundle.text),
-         :ok <- PythonRepl.reset_final(repl) do
-      result = iterate(prompt, context_bundle, settings, provider_module, repl, tracker, opts)
+    result =
+      case PythonRepl.start(settings, opts) do
+        {:ok, repl} ->
+          run_with_repl(prompt, context_bundle, settings, provider_module, repl, run_state, opts)
+
+        {:error, reason} ->
+          {:ok, error_result(prompt, Failure.from_stage(:startup, reason), run_state)}
+      end
+
+    RunState.stop(run_state)
+    result
+  end
+
+  defp run_with_repl(prompt, context_bundle, settings, provider_module, repl, run_state, opts) do
+    try do
+      with :ok <-
+             PythonRepl.set_handler(repl, llm_query_handler(provider_module, settings, run_state)),
+           :ok <- PythonRepl.set_context(repl, context_bundle.text),
+           :ok <- PythonRepl.reset_final(repl) do
+        iterate(prompt, context_bundle, settings, provider_module, repl, run_state, opts)
+      else
+        {:error, reason} ->
+          {:ok, error_result(prompt, Failure.from_stage(:startup, reason), run_state)}
+      end
+    after
       PythonRepl.stop(repl)
-      Agent.stop(tracker)
-      result
-    else
-      {:error, message} ->
-        Agent.stop(tracker)
-        {:ok, error_result(prompt, message, tracker)}
     end
   end
 
-  defp iterate(prompt, context_bundle, settings, provider_module, repl, tracker, opts) do
+  defp iterate(prompt, context_bundle, settings, provider_module, repl, run_state, opts) do
     history = [
-      %{role: "user", content: build_context_metadata(context_bundle, settings, prompt)}
+      %{role: "user", content: Policy.context_metadata(context_bundle, settings, prompt)}
     ]
 
-    execute_iterations(prompt, settings, provider_module, repl, tracker, opts, history, [], 1)
+    execute_iterations(prompt, settings, provider_module, repl, run_state, opts, history, [], 1)
   end
 
   defp execute_iterations(
@@ -36,7 +53,7 @@ defmodule Rlm.RLM.Engine do
          settings,
          _provider_module,
          _repl,
-         tracker,
+         run_state,
          _opts,
          _history,
          records,
@@ -44,14 +61,12 @@ defmodule Rlm.RLM.Engine do
        )
        when iteration > settings.max_iterations do
     {:ok,
-     finalize_result(
+     finalize_incomplete_result(
        prompt,
-       "[Maximum iterations reached without calling FINAL]",
        :max_iterations,
-       false,
        settings.max_iterations,
        records,
-       tracker
+       run_state
      )}
   end
 
@@ -60,278 +75,224 @@ defmodule Rlm.RLM.Engine do
          settings,
          provider_module,
          repl,
-         tracker,
+         run_state,
          opts,
          history,
          records,
          iteration
        ) do
-    total_sub_queries = tracker_get(tracker, :total_sub_queries)
-    system_prompt = build_system_prompt(settings, iteration, total_sub_queries)
+    snapshot = RunState.snapshot(run_state)
+    system_prompt = Policy.system_prompt(settings, iteration, snapshot)
 
     emit(opts[:on_event], %{type: :iteration_start, iteration: iteration, prompt: prompt})
 
-    with {:ok, root_response} <- provider_module.generate_code(history, system_prompt, settings),
-         :ok <- add_tokens(tracker, root_response),
-         {:ok, code} <- extract_code(root_response.text),
-         {:ok, exec_result} <- PythonRepl.execute(repl, code) do
-      emit(opts[:on_event], %{type: :generated_code, iteration: iteration, code: code})
-      update_best_answer(tracker, exec_result)
-      emit_iteration_output(opts[:on_event], iteration, exec_result)
+    case provider_module.generate_code(history, system_prompt, settings) do
+      {:ok, root_response} ->
+        RunState.add_tokens(run_state, root_response)
 
-      record = %{
-        iteration: iteration,
-        code: code,
-        raw_response: root_response.text,
-        stdout: exec_result.stdout,
-        stderr: exec_result.stderr,
-        has_final: exec_result.has_final,
-        final_value: exec_result.final_value
-      }
-
-      next_records = records ++ [record]
-
-      if exec_result.has_final and is_binary(exec_result.final_value) do
-        {:ok,
-         finalize_result(
-           prompt,
-           exec_result.final_value,
-           :completed,
-           true,
-           iteration,
-           next_records,
-           tracker
-         )}
-      else
-        next_history =
-          history ++
-            [
-              %{role: "assistant", content: root_response.text},
-              %{
-                role: "user",
-                content: build_iteration_feedback(exec_result, settings, iteration, tracker)
-              }
-            ]
-
-        execute_iterations(
+        handle_generated_iteration(
           prompt,
           settings,
           provider_module,
           repl,
-          tracker,
+          run_state,
           opts,
-          next_history,
-          next_records,
-          iteration + 1
+          history,
+          records,
+          iteration,
+          root_response
         )
-      end
-    else
-      {:error, message} -> {:ok, error_result(prompt, message, tracker, iteration, records)}
+
+      {:error, reason} ->
+        handle_failure(
+          prompt,
+          Failure.from_stage(:provider, reason),
+          settings,
+          provider_module,
+          repl,
+          run_state,
+          opts,
+          history,
+          records,
+          iteration
+        )
     end
   end
 
-  defp llm_query_handler(provider_module, settings, tracker) do
+  defp handle_generated_iteration(
+         prompt,
+         settings,
+         provider_module,
+         repl,
+         run_state,
+         opts,
+         history,
+         records,
+         iteration,
+         root_response
+       ) do
+    case extract_code(root_response.text) do
+      {:ok, code} ->
+        emit(opts[:on_event], %{type: :generated_code, iteration: iteration, code: code})
+
+        case PythonRepl.execute(repl, code) do
+          {:ok, exec_result} ->
+            RunState.remember_best_answer_from_exec(run_state, exec_result)
+            emit_iteration_output(opts[:on_event], iteration, exec_result)
+
+            record = %{
+              iteration: iteration,
+              code: code,
+              raw_response: root_response.text,
+              stdout: exec_result.stdout,
+              stderr: exec_result.stderr,
+              has_final: exec_result.has_final,
+              final_value: exec_result.final_value
+            }
+
+            next_records = records ++ [record]
+
+            cond do
+              exec_result.has_final and is_binary(exec_result.final_value) ->
+                RunState.remember_best_answer(run_state, exec_result.final_value, :final_value)
+
+                {:ok,
+                 finalize_result(
+                   prompt,
+                   exec_result.final_value,
+                   :completed,
+                   true,
+                   iteration,
+                   next_records,
+                   run_state
+                 )}
+
+              failure = Failure.from_exec_result(exec_result) ->
+                recovery_history = history ++ [%{role: "assistant", content: root_response.text}]
+
+                handle_failure(
+                  prompt,
+                  failure,
+                  settings,
+                  provider_module,
+                  repl,
+                  run_state,
+                  opts,
+                  recovery_history,
+                  next_records,
+                  iteration
+                )
+
+              true ->
+                next_history =
+                  history ++
+                    [
+                      %{role: "assistant", content: root_response.text},
+                      %{
+                        role: "user",
+                        content:
+                          Policy.iteration_feedback(
+                            exec_result,
+                            settings,
+                            iteration,
+                            RunState.snapshot(run_state)
+                          )
+                      }
+                    ]
+
+                execute_iterations(
+                  prompt,
+                  settings,
+                  provider_module,
+                  repl,
+                  run_state,
+                  opts,
+                  next_history,
+                  next_records,
+                  iteration + 1
+                )
+            end
+
+          {:error, reason} ->
+            handle_failure(
+              prompt,
+              Failure.from_stage(:runtime, reason),
+              settings,
+              provider_module,
+              repl,
+              run_state,
+              opts,
+              history,
+              records,
+              iteration
+            )
+        end
+
+      {:error, reason} ->
+        handle_failure(
+          prompt,
+          Failure.from_stage(:response_format, reason),
+          settings,
+          provider_module,
+          repl,
+          run_state,
+          opts,
+          history,
+          records,
+          iteration
+        )
+    end
+  end
+
+  defp handle_failure(
+         prompt,
+         failure,
+         settings,
+         provider_module,
+         repl,
+         run_state,
+         opts,
+         history,
+         records,
+         iteration
+       ) do
+    RunState.note_failure(run_state, failure)
+    snapshot = RunState.snapshot(run_state)
+
+    if Recovery.allowed?(failure, snapshot, settings, iteration) do
+      RunState.apply_recovery(run_state, Recovery.flags_for(failure))
+
+      next_history =
+        history ++
+          [%{role: "user", content: Recovery.feedback(failure, RunState.snapshot(run_state))}]
+
+      execute_iterations(
+        prompt,
+        settings,
+        provider_module,
+        repl,
+        run_state,
+        opts,
+        next_history,
+        records,
+        iteration + 1
+      )
+    else
+      {:ok, error_result(prompt, failure, run_state, iteration, records)}
+    end
+  end
+
+  defp llm_query_handler(provider_module, settings, run_state) do
     fn sub_context, instruction ->
-      with {:ok, _count} <- reserve_sub_query(tracker, settings.max_sub_queries),
+      with {:ok, _count} <- RunState.reserve_sub_query(run_state, settings.max_sub_queries),
            {:ok, response} <-
-             provider_module.complete_subquery(sub_context, instruction, settings),
-           :ok <- add_tokens(tracker, response) do
+             provider_module.complete_subquery(sub_context, instruction, settings) do
+        RunState.add_tokens(run_state, response)
+        RunState.remember_subquery_success(run_state, instruction)
         {:ok, %{text: response.text}}
       else
-        {:error, message} -> {:error, message}
+        {:error, reason} -> {:error, reason}
       end
-    end
-  end
-
-  defp reserve_sub_query(tracker, max_sub_queries) do
-    Agent.get_and_update(tracker, fn state ->
-      if state.total_sub_queries >= max_sub_queries do
-        {{:error,
-          "Maximum sub-query limit (#{max_sub_queries}) reached. Call FINAL() with your best answer now."},
-         state}
-      else
-        next_state = %{state | total_sub_queries: state.total_sub_queries + 1}
-        {{:ok, next_state.total_sub_queries}, next_state}
-      end
-    end)
-  end
-
-  defp start_tracker do
-    {:ok, tracker} =
-      Agent.start_link(fn ->
-        %{
-          total_sub_queries: 0,
-          input_tokens: 0,
-          output_tokens: 0,
-          best_answer_so_far: nil,
-          best_answer_reason: nil
-        }
-      end)
-
-    tracker
-  end
-
-  defp add_tokens(tracker, response) do
-    Agent.update(tracker, fn state ->
-      %{
-        state
-        | input_tokens: state.input_tokens + (response[:input_tokens] || 0),
-          output_tokens: state.output_tokens + (response[:output_tokens] || 0)
-      }
-    end)
-  end
-
-  defp tracker_get(tracker, key), do: Agent.get(tracker, &Map.fetch!(&1, key))
-
-  defp update_best_answer(tracker, exec_result) do
-    cond do
-      exec_result.has_final and is_binary(exec_result.final_value) and
-          String.trim(exec_result.final_value) != "" ->
-        put_best_answer(tracker, exec_result.final_value, :final_value)
-
-      String.trim(exec_result.stdout) != "" ->
-        put_best_answer(tracker, exec_result.stdout, :stdout)
-
-      true ->
-        :ok
-    end
-  end
-
-  defp put_best_answer(tracker, answer, reason) do
-    trimmed = String.trim(answer)
-
-    Agent.update(tracker, fn state ->
-      %{state | best_answer_so_far: trimmed, best_answer_reason: reason}
-    end)
-  end
-
-  defp build_context_metadata(context_bundle, settings, prompt) do
-    context = context_bundle.text
-    lines = String.split(context, "\n")
-    source_count = length(context_bundle.entries)
-
-    source_types =
-      context_bundle.entries
-      |> Enum.frequencies_by(& &1.type)
-      |> Enum.map_join(", ", fn {type, count} -> "#{count} #{type}" end)
-
-    source_preview =
-      context_bundle.entries
-      |> Enum.take(8)
-      |> Enum.map_join("\n", &"  - #{&1.label}")
-
-    source_preview =
-      if source_count > 8 do
-        source_preview <> "\n  - ... (#{source_count - 8} more sources)"
-      else
-        source_preview
-      end
-
-    source_types_display = if source_types == "", do: "none", else: source_types
-
-    strategy_hint =
-      cond do
-        context_bundle.bytes <= 20_000 and source_count <= 20 ->
-          "This looks small-to-medium. Prefer direct reasoning over the whole context or one small number of sub-queries."
-
-        context_bundle.bytes <= 80_000 ->
-          "This looks medium-sized. Use the fewest chunks that could work, and prefer sequential chunking over parallel fan-out."
-
-        true ->
-          "This looks large. Structure the work carefully, keep chunk counts low, and maintain a best-so-far answer."
-      end
-
-    [
-      "Context Header:",
-      "  - Query: #{prompt}",
-      "  - Size: #{String.length(context)} characters, #{length(lines)} lines, #{source_count} source(s)",
-      "  - Source types: #{source_types_display}",
-      "  - Strategy hint: #{strategy_hint}",
-      "",
-      "Source preview:",
-      if(source_preview == "", do: "  - (inline or empty context)", else: source_preview),
-      "",
-      "First #{settings.metadata_preview_lines} lines:",
-      Enum.take(lines, settings.metadata_preview_lines) |> Enum.join("\n"),
-      "",
-      "Last #{settings.metadata_preview_lines} lines:",
-      Enum.take(lines, -settings.metadata_preview_lines) |> Enum.join("\n")
-    ]
-    |> Enum.join("\n")
-  end
-
-  defp build_system_prompt(settings, iteration, sub_queries_used) do
-    remaining_iterations = settings.max_iterations - iteration + 1
-    remaining_sub_queries = settings.max_sub_queries - sub_queries_used
-
-    sub_model_note =
-      if settings.sub_model,
-        do: "Sub-queries use #{settings.sub_model}.",
-        else: "Sub-queries use the root model."
-
-    """
-    You are a Recursive Language Model (RLM) agent. You process arbitrarily large contexts by writing Python code in a persistent REPL.
-
-    Budget:
-    - #{remaining_iterations} iteration(s) remaining out of #{settings.max_iterations}
-    - #{remaining_sub_queries} sub-query call(s) remaining out of #{settings.max_sub_queries}
-    - #{sub_model_note}
-
-    Available in the REPL:
-    1. `context`: the full input text as a Python string.
-    2. `llm_query(sub_context, instruction)`: ask a sub-query over a chunk.
-    3. `async_llm_query(sub_context, instruction)`: async wrapper for parallel chunk work.
-    4. `FINAL(answer)` and `FINAL_VAR(value)`: finish with the final answer.
-
-    Rules:
-    - Respond with ONLY a Python code block.
-    - Use print() for intermediate output.
-    - Treat iterations, sub-queries, tokens, and latency as a strict budget.
-    - Every `llm_query()` call is expensive. Minimize calls and prefer direct reasoning when the context header says the input is small or medium.
-    - Do not chunk by default. Start with direct synthesis or a single targeted sub-query unless the context is clearly too large.
-    - If you chunk, use the fewest chunks that could work and keep the code simple.
-    - Do not use parallel fan-out unless the context is clearly very large and the expected gain is worth the budget.
-    - If async or a sub-query strategy fails once, do not retry the same strategy. Fall back to simpler sequential reasoning.
-    - Keep a best-so-far answer in a variable and finalize early when it is good enough.
-    - Filter and slice context with Python before calling llm_query().
-    - Store intermediate results in variables because the REPL is persistent.
-    - Call FINAL() as soon as you have a useful answer; do not spend budget polishing unnecessarily.
-    """
-  end
-
-  defp build_iteration_feedback(exec_result, settings, iteration, tracker) do
-    parts = []
-
-    parts =
-      if exec_result.stdout != "",
-        do:
-          parts ++ ["Output:\n#{truncate_output(exec_result.stdout, settings.truncate_length)}"],
-        else: parts
-
-    parts =
-      if exec_result.stderr != "",
-        do: parts ++ ["Stderr:\n#{String.slice(exec_result.stderr, 0, 5_000)}"],
-        else: parts
-
-    parts =
-      if parts == [],
-        do: ["(No output produced. The code ran without printing anything.)"],
-        else: parts
-
-    (parts ++
-       [
-         "Iteration #{iteration}/#{settings.max_iterations}. Sub-queries used: #{tracker_get(tracker, :total_sub_queries)}/#{settings.max_sub_queries}.",
-         "Continue processing or call FINAL() when you have the answer."
-       ])
-    |> Enum.join("\n\n")
-  end
-
-  defp truncate_output(text, truncate_length) do
-    if String.length(text) <= truncate_length do
-      if text == "", do: "[EMPTY OUTPUT]", else: text
-    else
-      "[TRUNCATED: Last #{truncate_length} chars shown].. " <>
-        String.slice(text, -truncate_length, truncate_length)
     end
   end
 
@@ -351,62 +312,64 @@ defmodule Rlm.RLM.Engine do
     end
   end
 
-  defp finalize_result(prompt, answer, status, completed?, iterations, records, tracker) do
+  defp finalize_result(prompt, answer, status, completed?, iterations, records, run_state) do
+    snapshot = RunState.snapshot(run_state)
+
     %{
       prompt: prompt,
       answer: answer,
       status: status,
       completed?: completed?,
       iterations: iterations,
-      total_sub_queries: tracker_get(tracker, :total_sub_queries),
-      input_tokens: tracker_get(tracker, :input_tokens),
-      output_tokens: tracker_get(tracker, :output_tokens),
+      total_sub_queries: snapshot.total_sub_queries,
+      input_tokens: snapshot.input_tokens,
+      output_tokens: snapshot.output_tokens,
       depth: 0,
-      best_answer_reason: tracker_get(tracker, :best_answer_reason),
+      best_answer_reason: snapshot.best_answer_reason,
+      recovery_flags: snapshot.recovery_flags,
+      failure_history: snapshot.failure_history,
+      last_successful_subquery: snapshot.last_successful_subquery,
       iteration_records: records
     }
   end
 
-  defp error_result(prompt, message, tracker, iterations \\ 0, records \\ []) do
-    answer = render_failure_answer(tracker_get(tracker, :best_answer_so_far), message)
+  defp finalize_incomplete_result(prompt, status, iterations, records, run_state) do
+    snapshot = RunState.snapshot(run_state)
+
+    answer =
+      case snapshot.best_answer_so_far do
+        nil ->
+          "The run reached its iteration limit before it could produce a reliable answer."
+
+        best ->
+          best <>
+            "\n\nNote: this is the best partial answer available because the run reached its iteration limit."
+      end
+
+    finalize_result(prompt, answer, status, false, iterations, records, run_state)
+  end
+
+  defp error_result(prompt, failure, run_state, iterations \\ 0, records \\ []) do
+    answer = render_failure_answer(RunState.snapshot(run_state).best_answer_so_far, failure)
 
     finalize_result(
       prompt,
       answer,
-      :provider_error,
+      Failure.status(failure),
       false,
       iterations,
       records,
-      tracker
+      run_state
     )
   end
 
-  defp render_failure_answer(nil, message) do
-    "The run could not finish because #{error_diagnosis(message)}"
+  defp render_failure_answer(nil, failure) do
+    "The run could not finish because #{Failure.diagnosis(failure)}"
   end
 
-  defp render_failure_answer(best_answer, message) do
+  defp render_failure_answer(best_answer, failure) do
     best_answer <>
-      "\n\nNote: this is the best partial answer available because #{error_diagnosis(message)}"
-  end
-
-  defp error_diagnosis(message) do
-    cond do
-      String.contains?(message, "timed out") ->
-        "the provider timed out. Retry with a narrower question or a longer timeout."
-
-      String.contains?(message, "Maximum sub-query limit") ->
-        "the run exhausted its sub-query budget. Retry with a narrower question or a higher sub-query limit."
-
-      String.contains?(message, "shutting down") or String.contains?(message, "Task supervisor") ->
-        "the runtime became unavailable during execution. Retry the command; if it persists, inspect the runtime startup path."
-
-      String.contains?(message, "Could not extract Python code") ->
-        "the provider returned a response the runtime could not execute. Retry the command or adjust the model/provider configuration."
-
-      true ->
-        "the provider or runtime failed before the run could complete. Retry the command; if it persists, inspect the provider and runtime configuration."
-    end
+      "\n\nNote: this is the best partial answer available because #{Failure.diagnosis(failure)}"
   end
 
   defp emit_iteration_output(on_event, iteration, exec_result) do

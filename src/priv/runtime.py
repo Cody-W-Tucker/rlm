@@ -26,6 +26,10 @@ __final_result__ = None
 _user_ns = {}
 
 
+class SubqueryError(RuntimeError):
+    pass
+
+
 class AwaitableString(str):
     def __new__(cls, value):
         return super().__new__(cls, value)
@@ -100,7 +104,16 @@ def llm_query(sub_context, instruction=""):
 
     event.wait()
     _pending_results.pop(request_id, None)
-    return _result_store.pop(request_id, "")
+    result = _result_store.pop(request_id, {"status": "error", "message": "Sub-query returned no result."})
+
+    if isinstance(result, dict):
+        status = result.get("status")
+        if status == "ok":
+            return result.get("text", "")
+        if status == "error":
+            raise SubqueryError(result.get("message", "Sub-query failed."))
+
+    raise SubqueryError(f"Unexpected sub-query result: {result!r}")
 
 
 def async_llm_query(sub_context, instruction=""):
@@ -116,6 +129,7 @@ def _refresh_user_ns():
             "async_llm_query": async_llm_query,
             "FINAL": FINAL,
             "FINAL_VAR": FINAL_VAR,
+            "SubqueryError": SubqueryError,
         }
     )
 

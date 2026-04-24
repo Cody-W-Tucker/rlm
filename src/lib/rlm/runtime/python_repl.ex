@@ -64,7 +64,7 @@ defmodule Rlm.Runtime.PythonRepl do
        task_refs: %{},
        received: MapSet.new(),
        shutting_down: false
-      }}
+     }}
   end
 
   @impl true
@@ -211,16 +211,26 @@ defmodule Rlm.Runtime.PythonRepl do
 
   defp normalize_message(_type, message), do: {:ok, message}
 
-  defp normalize_task_result({:ok, %{text: text}}), do: text
-  defp normalize_task_result({:error, message}) when is_binary(message), do: "[ERROR] #{message}"
-  defp normalize_task_result({:error, message}), do: "[ERROR] #{inspect(message)}"
-  defp normalize_task_result(other), do: inspect(other)
+  defp normalize_task_result({:ok, %{text: text}}), do: %{status: "ok", text: text}
 
-  defp start_llm_query_task(%State{shutting_down: true} = state, request_id, _sub_context, _instruction) do
+  defp normalize_task_result({:error, message}) when is_binary(message),
+    do: %{status: "error", message: message}
+
+  defp normalize_task_result({:error, message}),
+    do: %{status: "error", message: inspect(message)}
+
+  defp normalize_task_result(other), do: %{status: "error", message: inspect(other)}
+
+  defp start_llm_query_task(
+         %State{shutting_down: true} = state,
+         request_id,
+         _sub_context,
+         _instruction
+       ) do
     send_payload(state.port, %{
       type: "llm_result",
       id: request_id,
-      result: "[ERROR] Python runtime is shutting down; sub-query aborted."
+      result: %{status: "error", message: "Python runtime is shutting down; sub-query aborted."}
     })
 
     state
@@ -232,7 +242,10 @@ defmodule Rlm.Runtime.PythonRepl do
         send_payload(state.port, %{
           type: "llm_result",
           id: request_id,
-          result: "[ERROR] Task supervisor is unavailable; sub-query aborted."
+          result: %{
+            status: "error",
+            message: "Task supervisor is unavailable; sub-query aborted."
+          }
         })
 
         %{state | shutting_down: true}
@@ -250,7 +263,10 @@ defmodule Rlm.Runtime.PythonRepl do
             send_payload(state.port, %{
               type: "llm_result",
               id: request_id,
-              result: "[ERROR] Task supervisor exited before sub-query start."
+              result: %{
+                status: "error",
+                message: "Task supervisor exited before sub-query start."
+              }
             })
 
             %{state | shutting_down: true}

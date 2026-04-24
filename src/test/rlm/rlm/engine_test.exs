@@ -28,6 +28,51 @@ defmodule Rlm.TestAsyncProvider do
   end
 end
 
+defmodule Rlm.TestSubqueryErrorProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(_history, _system_prompt, _settings) do
+    {:ok,
+     %{
+       text:
+         "```python\nresult = llm_query(context, \"Summarize this chunk\")\nprint(\"subquery completed\")\nprint(result)\n```",
+       input_tokens: 0,
+       output_tokens: 0
+     }}
+  end
+
+  def complete_subquery(_sub_context, _instruction, _settings) do
+    {:error, "%Req.TransportError{reason: :timeout}"}
+  end
+end
+
+defmodule Rlm.TestRecoveringProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(history, _system_prompt, _settings) do
+    if Enum.any?(history, &String.contains?(&1.content, "Recovery mode:")) do
+      {:ok,
+       %{
+         text: "```python\nFINAL(\"Recovered via a simpler direct answer\")\n```",
+         input_tokens: 0,
+         output_tokens: 0
+       }}
+    else
+      {:ok,
+       %{
+         text:
+           "```python\nresult = llm_query(context, \"Summarize this chunk\")\nprint(\"subquery completed\")\nprint(result)\n```",
+         input_tokens: 0,
+         output_tokens: 0
+       }}
+    end
+  end
+
+  def complete_subquery(_sub_context, _instruction, _settings) do
+    {:error, "%Req.TransportError{reason: :timeout}"}
+  end
+end
+
 defmodule Rlm.RLM.EngineTest do
   use ExUnit.Case, async: false
 
@@ -93,10 +138,41 @@ defmodule Rlm.RLM.EngineTest do
 
     assert {:ok, result} = Engine.run("summarize", bundle, settings, PartialThenErrorProvider)
     refute result.completed?
-    assert result.status == :provider_error
+    assert result.status == :provider_timeout
     assert result.answer =~ "Recovered summary from partial work"
     assert result.answer =~ "best partial answer available"
     assert result.answer =~ "provider timed out"
     assert result.best_answer_reason == :stdout
+    assert Enum.any?(result.failure_history, &(&1.class == :provider_timeout))
+  end
+
+  test "routes sub-query failures to stderr instead of normal response text" do
+    settings = TestHelpers.settings(%{max_iterations: 1, max_sub_queries: 3})
+    bundle = %{entries: [], text: "abcdef", bytes: 6}
+
+    assert {:ok, result} =
+             Engine.run("summarize", bundle, settings, Rlm.TestSubqueryErrorProvider)
+
+    assert result.status == :provider_timeout
+    refute result.completed?
+
+    record = hd(result.iteration_records)
+    assert record.stdout == ""
+    assert record.stderr =~ "SubqueryError"
+    assert record.stderr =~ "%Req.TransportError{reason: :timeout}"
+    refute record.stderr =~ "Unexpected sub-query result"
+  end
+
+  test "uses one recovery iteration with stricter policy after a sub-query timeout" do
+    settings = TestHelpers.settings(%{max_iterations: 2, max_sub_queries: 3})
+    bundle = %{entries: [], text: "abcdef", bytes: 6}
+
+    assert {:ok, result} = Engine.run("summarize", bundle, settings, Rlm.TestRecoveringProvider)
+    assert result.completed?
+    assert result.answer == "Recovered via a simpler direct answer"
+    assert result.recovery_flags.recovery_mode
+    assert result.recovery_flags.broad_subqueries_disabled
+    assert Enum.any?(result.failure_history, &(&1.class == :provider_timeout))
+    assert result.iterations == 2
   end
 end
