@@ -35,7 +35,7 @@ defmodule Rlm.CLI.WorkflowTest do
         assert :ok = CLI.dispatch(["--provider", "mock", "--file", file_path, "What is loaded?"])
       end)
 
-    assert output =~ "Observed context"
+    assert output =~ "Observed file context"
     assert output =~ "session context"
   end
 

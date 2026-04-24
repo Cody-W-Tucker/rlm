@@ -1,10 +1,12 @@
 defmodule Rlm.Engine.Policy do
   @moduledoc "Prompt and iteration policy for the RLM engine."
 
-  def context_metadata(context_bundle, settings, prompt) do
+  def context_metadata(context_bundle, _settings, prompt) do
     context = context_bundle.text
-    lines = String.split(context, "\n")
     source_count = length(context_bundle.entries)
+    lazy_entries = Map.get(context_bundle, :lazy_entries, [])
+    lazy_file_count = length(lazy_entries)
+    inline_chars = String.length(context)
     structure_hint = structure_hint(context_bundle, context)
 
     source_types =
@@ -12,27 +14,30 @@ defmodule Rlm.Engine.Policy do
       |> Enum.frequencies_by(& &1.type)
       |> Enum.map_join(", ", fn {type, count} -> "#{count} #{type}" end)
 
-    source_preview =
-      context_bundle.entries
-      |> Enum.take(8)
-      |> Enum.map_join("\n", &"  - #{&1.label}")
-
-    source_preview =
-      if source_count > 8 do
-        source_preview <> "\n  - ... (#{source_count - 8} more sources)"
-      else
-        source_preview
-      end
-
     source_types_display = if source_types == "", do: "none", else: source_types
+
+    access_hint =
+      cond do
+        lazy_file_count > 0 and inline_chars > 0 ->
+          "Inline text is available in `context`. Use `list_files()`, `read_file(path)`, and `grep_files(pattern)` for file-backed sources."
+
+        lazy_file_count > 0 ->
+          "Context is file-backed. Use `list_files()`, `read_file(path)`, and `grep_files(pattern)` instead of assuming `context` contains the corpus."
+
+        true ->
+          "Context is preloaded in `context`."
+      end
 
     strategy_hint =
       cond do
-        context_bundle.bytes <= 20_000 and source_count <= 20 ->
+        context_bundle.bytes <= 20_000 and source_count <= 20 and lazy_file_count == 0 ->
           "This looks small-to-medium. Prefer direct reasoning over the whole context or one small number of sub-queries."
 
-        context_bundle.bytes <= 80_000 ->
+        context_bundle.bytes <= 80_000 and lazy_file_count == 0 ->
           "This looks medium-sized. Start with direct synthesis, then one narrow sub-query if needed, and only then consider small sequential chunking."
+
+        lazy_file_count > 0 ->
+          "This looks file-backed. Scout by listing files, grep for high-signal terms from the query, read only the most promising files, and keep the working set small."
 
         true ->
           "This looks large. Structure the work carefully, keep chunk counts low, and maintain a best-so-far answer."
@@ -41,19 +46,14 @@ defmodule Rlm.Engine.Policy do
     [
       "Context Header:",
       "  - Query: #{prompt}",
-      "  - Size: #{String.length(context)} characters, #{length(lines)} lines, #{source_count} source(s)",
+      "  - Aggregate size: #{context_bundle.bytes} bytes across #{source_count} source(s)",
+      "  - Preloaded context chars: #{inline_chars}",
+      "  - File-backed sources: #{lazy_file_count}",
       "  - Source types: #{source_types_display}",
       "  - Structure hint: #{structure_hint}",
+      "  - Access hint: #{access_hint}",
       "  - Strategy hint: #{strategy_hint}",
-      "",
-      "Source preview:",
-      if(source_preview == "", do: "  - (inline or empty context)", else: source_preview),
-      "",
-      "First #{settings.metadata_preview_lines} lines:",
-      Enum.take(lines, settings.metadata_preview_lines) |> Enum.join("\n"),
-      "",
-      "Last #{settings.metadata_preview_lines} lines:",
-      Enum.take(lines, -settings.metadata_preview_lines) |> Enum.join("\n")
+      "  - Metadata budget: constant-size summary only; inspect content via REPL tools."
     ]
     |> Enum.join("\n")
   end
@@ -77,21 +77,25 @@ defmodule Rlm.Engine.Policy do
     - #{remaining_sub_queries} sub-query call(s) remaining out of #{settings.max_sub_queries}
     - #{sub_model_note}
 
-    Available in the REPL:
-    1. `context`: the full input text as a Python string.
-    2. `llm_query(sub_context, instruction)`: ask a sub-query over a chunk.
-    3. `async_llm_query(sub_context, instruction)`: async wrapper for parallel chunk work.
-    4. `FINAL(answer)` and `FINAL_VAR(value)`: finish with the final answer.
-    5. `SubqueryError`: exception raised when a sub-query fails.
+     Available in the REPL:
+    1. `context`: preloaded inline context as a Python string. It may be empty when the input is file-backed.
+    2. `list_files(limit=200, offset=0)`: list file-backed sources available to inspect.
+    3. `read_file(path, offset=1, limit=200)`: read a specific allowed file with line numbers.
+    4. `grep_files(pattern, limit=50)`: regex search across allowed files and return matching file/line pairs.
+    5. `llm_query(sub_context, instruction)`: ask a sub-query over a chunk.
+    6. `async_llm_query(sub_context, instruction)`: async wrapper for parallel chunk work.
+    7. `FINAL(answer)` and `FINAL_VAR(value)`: finish with the final answer.
+    8. `SubqueryError`: exception raised when a sub-query fails.
 
     Rules:
     - Respond with ONLY a Python code block.
     - Use print() for intermediate output.
     - Treat iterations, sub-queries, tokens, and latency as a strict budget.
-    - Always start with a scouting pass: `print(len(context))`, inspect a small slice, and identify the most useful content structure for answering the user's question.
+    - Always start with a scouting pass: inspect the context header, then use `print(len(context))` for preloaded text or `print(list_files())` for file-backed inputs before reading deeply.
     - Make scouting goal-directed: look for the content patterns most likely to answer the prompt, such as repeated themes, reflective passages, summaries, decision logs, section headers, or recurring motifs.
     - Do not spend iterations re-deriving filenames or source layout unless the task specifically depends on source structure.
     - Treat file/path boundaries, week/day/date markers, and other separators as optional signals, not the main retrieval strategy.
+    - For file-backed inputs, avoid broad reads. Use `grep_files()` to narrow candidates, then `read_file()` only on the best matches.
     - Every `llm_query()` call is expensive. Minimize calls and prefer direct reasoning when the context header says the input is small or medium.
     - Do not chunk by default. Start with direct synthesis or a single targeted sub-query unless the context is clearly too large.
     - If you chunk, use the fewest chunks that could work and keep the code simple.

@@ -31,7 +31,14 @@ defmodule Rlm.Providers.Mock do
         print(preview)
         FINAL("Observed context:\\n" + preview)
     else:
-        FINAL("No context was loaded.")
+        files = list_files(limit=1)
+        if files:
+            file_preview = read_file(files[0], limit=20)
+            print(files[0])
+            print(file_preview)
+            FINAL("Observed file context from " + files[0] + ":\\n" + file_preview)
+        else:
+            FINAL("No context was loaded.")
     """
   end
 end

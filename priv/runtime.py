@@ -9,7 +9,9 @@ import asyncio
 import concurrent.futures
 import io
 import json
+import os
 import queue
+import re
 import sys
 import threading
 import traceback
@@ -24,6 +26,8 @@ _result_store = {}
 _command_queue = queue.Queue()
 _subquery_executor = concurrent.futures.ThreadPoolExecutor(max_workers=8)
 context = ""
+_file_sources = []
+_file_source_set = set()
 __final_result__ = None
 _user_ns = {}
 
@@ -128,11 +132,58 @@ def async_llm_query(sub_context, instruction=""):
     return AwaitableQuery(_subquery_executor.submit(llm_query, sub_context, instruction))
 
 
+def list_files(limit=200, offset=0):
+    safe_limit = max(0, min(int(limit), 1000))
+    safe_offset = max(0, int(offset))
+    return _file_sources[safe_offset : safe_offset + safe_limit]
+
+
+def _normalize_allowed_path(path):
+    if not isinstance(path, str):
+        raise ValueError("path must be a string")
+
+    normalized = os.path.realpath(path)
+    if normalized not in _file_source_set:
+        raise ValueError(f"path is not in the allowed file set: {path}")
+    return normalized
+
+
+def read_file(path, offset=1, limit=200):
+    normalized = _normalize_allowed_path(path)
+    safe_offset = max(1, int(offset))
+    safe_limit = max(1, min(int(limit), 1000))
+
+    with open(normalized, "r", encoding="utf-8") as handle:
+        lines = handle.read().splitlines()
+
+    selected = lines[safe_offset - 1 : safe_offset - 1 + safe_limit]
+    return "\n".join(f"{idx}: {line}" for idx, line in enumerate(selected, start=safe_offset))
+
+
+def grep_files(pattern, limit=50):
+    compiled = re.compile(pattern)
+    safe_limit = max(1, min(int(limit), 500))
+    matches = []
+
+    for path in _file_sources:
+        with open(path, "r", encoding="utf-8") as handle:
+            for number, line in enumerate(handle, start=1):
+                if compiled.search(line):
+                    matches.append({"path": path, "line": number, "text": line.rstrip("\n")})
+                    if len(matches) >= safe_limit:
+                        return matches
+
+    return matches
+
+
 def _refresh_user_ns():
     _user_ns.update(
         {
             "__builtins__": __builtins__,
             "context": context,
+            "list_files": list_files,
+            "read_file": read_file,
+            "grep_files": grep_files,
             "llm_query": llm_query,
             "async_llm_query": async_llm_query,
             "FINAL": FINAL,
@@ -247,7 +298,17 @@ def _try_direct_exec(code, captured_stderr):
 
 
 def _try_async_wrapper_exec(code, captured_stderr):
-    protected = {"context", "llm_query", "async_llm_query", "FINAL", "FINAL_VAR", "__builtins__"}
+    protected = {
+        "context",
+        "list_files",
+        "read_file",
+        "grep_files",
+        "llm_query",
+        "async_llm_query",
+        "FINAL",
+        "FINAL_VAR",
+        "__builtins__",
+    }
     async_code = "async def __async_exec__():\n"
 
     for line in code.split("\n"):
@@ -325,6 +386,8 @@ def _execute_code(code):
 
 def _main_loop():
     global context
+    global _file_sources
+    global _file_source_set
     global __final_result__
 
     while True:
@@ -338,6 +401,10 @@ def _main_loop():
         elif msg_type == "set_context":
             context = message.get("value", "")
             _write_message({"type": "context_set"})
+        elif msg_type == "set_file_sources":
+            _file_sources = [os.path.realpath(path) for path in message.get("paths", []) if isinstance(path, str)]
+            _file_source_set = set(_file_sources)
+            _write_message({"type": "file_sources_set"})
         elif msg_type == "reset_final":
             __final_result__ = None
             _write_message({"type": "final_reset"})

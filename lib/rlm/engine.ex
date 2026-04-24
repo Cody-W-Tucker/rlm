@@ -27,10 +27,16 @@ defmodule Rlm.Engine do
   end
 
   defp run_with_repl(prompt, context_bundle, settings, provider_module, repl, run_state, opts) do
+    file_sources =
+      context_bundle
+      |> Map.get(:lazy_entries, [])
+      |> Enum.map(& &1.label)
+
     try do
       with :ok <-
              PythonRepl.set_handler(repl, llm_query_handler(provider_module, settings, run_state)),
            :ok <- PythonRepl.set_context(repl, context_bundle.text),
+           :ok <- PythonRepl.set_file_sources(repl, file_sources),
            :ok <- PythonRepl.reset_final(repl) do
         iterate(prompt, context_bundle, settings, provider_module, repl, run_state, opts)
       else

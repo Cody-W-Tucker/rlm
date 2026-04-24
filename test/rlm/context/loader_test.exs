@@ -19,9 +19,8 @@ defmodule Rlm.Context.LoaderTest do
 
     assert {:ok, bundle} = Loader.load({:path, tmp}, settings)
     assert Enum.map(bundle.entries, &Path.basename(&1.label)) == ["alpha.txt", "beta.txt"]
-    assert bundle.text =~ "alpha"
-    assert bundle.text =~ "beta"
-    refute bundle.text =~ "skip"
+    assert bundle.text == ""
+    assert Enum.map(bundle.lazy_entries, &Path.basename(&1.label)) == ["alpha.txt", "beta.txt"]
   end
 
   test "loads glob patterns", %{tmp: tmp, settings: settings} do
@@ -31,6 +30,7 @@ defmodule Rlm.Context.LoaderTest do
 
     assert {:ok, bundle} = Loader.load({:path, Path.join(tmp, "*.ex")}, settings)
     assert length(bundle.entries) == 2
+    assert length(bundle.lazy_entries) == 2
   end
 
   test "loads relative paths from caller cwd when provided", %{tmp: tmp, settings: settings} do

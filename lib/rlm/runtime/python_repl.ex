@@ -25,6 +25,14 @@ defmodule Rlm.Runtime.PythonRepl do
     do:
       GenServer.call(pid, {:await, "context_set", %{type: "set_context", value: text}}, :infinity)
 
+  def set_file_sources(pid, paths),
+    do:
+      GenServer.call(
+        pid,
+        {:await, "file_sources_set", %{type: "set_file_sources", paths: paths}},
+        :infinity
+      )
+
   def reset_final(pid),
     do: GenServer.call(pid, {:await, "final_reset", %{type: "reset_final"}}, :infinity)
 
@@ -197,6 +205,7 @@ defmodule Rlm.Runtime.PythonRepl do
 
   defp normalize_message("ready", _message), do: :ok
   defp normalize_message("context_set", _message), do: :ok
+  defp normalize_message("file_sources_set", _message), do: :ok
   defp normalize_message("final_reset", _message), do: :ok
 
   defp normalize_message("exec_done", message) do

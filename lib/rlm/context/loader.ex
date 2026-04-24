@@ -7,7 +7,7 @@ defmodule Rlm.Context.Loader do
   @excluded_segments MapSet.new([".git", "_build", "deps", "node_modules"])
 
   def empty_bundle do
-    %{entries: [], text: "", bytes: 0}
+    %{entries: [], text: "", bytes: 0, lazy_entries: []}
   end
 
   def load_many(sources, %Settings{} = settings) do
@@ -25,7 +25,8 @@ defmodule Rlm.Context.Loader do
     merged = %{
       entries: bundle.entries ++ loaded_bundle.entries,
       text: join_text(bundle.text, loaded_bundle.text),
-      bytes: bundle.bytes + loaded_bundle.bytes
+      bytes: bundle.bytes + loaded_bundle.bytes,
+      lazy_entries: bundle.lazy_entries ++ Map.get(loaded_bundle, :lazy_entries, [])
     }
 
     validate_bundle(merged, settings)
@@ -43,7 +44,7 @@ defmodule Rlm.Context.Loader do
         metadata: %{source: label}
       }
 
-      {:ok, %{entries: [entry], text: valid_text, bytes: byte_size(valid_text)}}
+      {:ok, %{entries: [entry], text: valid_text, bytes: byte_size(valid_text), lazy_entries: []}}
     end
   end
 
@@ -70,19 +71,18 @@ defmodule Rlm.Context.Loader do
   end
 
   defp load_file(path, %Settings{} = settings) do
-    with {:ok, content} <- File.read(path),
-         {:ok, text} <- validate_text(content, path),
-         {:ok, text} <- ensure_text_limit(text, settings.max_context_bytes, path) do
+    with {:ok, stat} <- File.stat(path),
+         {:ok, size} <- ensure_file_limit(stat.size, settings.max_context_bytes, path) do
       entry = %Entry{
         id: unique_id(),
         type: :file,
         label: path,
-        text: text,
-        bytes: byte_size(text),
-        metadata: %{path: path}
+        text: "",
+        bytes: size,
+        metadata: %{path: path, lazy: true}
       }
 
-      {:ok, %{entries: [entry], text: text, bytes: byte_size(text)}}
+      {:ok, %{entries: [entry], text: "", bytes: size, lazy_entries: [entry]}}
     end
   end
 
@@ -148,7 +148,7 @@ defmodule Rlm.Context.Loader do
             metadata: %{url: url, status: status}
           }
 
-          {:ok, %{entries: [entry], text: text, bytes: byte_size(text)}}
+          {:ok, %{entries: [entry], text: text, bytes: byte_size(text), lazy_entries: []}}
         end
 
       {:ok, %{status: status}} ->
@@ -190,6 +190,14 @@ defmodule Rlm.Context.Loader do
   defp ensure_text_limit(text, max_bytes, label) do
     if byte_size(text) <= max_bytes do
       {:ok, text}
+    else
+      {:error, "#{label} exceeds the #{div(max_bytes, 1024 * 1024)}MB safety limit."}
+    end
+  end
+
+  defp ensure_file_limit(size, max_bytes, label) do
+    if size <= max_bytes do
+      {:ok, size}
     else
       {:error, "#{label} exceeds the #{div(max_bytes, 1024 * 1024)}MB safety limit."}
     end

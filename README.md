@@ -116,7 +116,6 @@ Important settings:
 - `max_iterations`
 - `max_sub_queries`
 - `truncate_length`
-- `metadata_preview_lines`
 - `max_context_bytes`
 - `max_context_files`
 - `storage_dir`
