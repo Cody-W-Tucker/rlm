@@ -17,6 +17,6 @@ config :rlm, Rlm.Settings,
   truncate_length: 5_000,
   metadata_preview_lines: 12,
   max_context_bytes: 10 * 1024 * 1024,
-  max_context_files: 100,
+  max_context_files: 1000,
   max_slice_chars: 4_000,
   storage_dir: Path.expand("~/.local/state/rlm/runs")

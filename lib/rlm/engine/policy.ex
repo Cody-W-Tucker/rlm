@@ -5,6 +5,7 @@ defmodule Rlm.Engine.Policy do
     context = context_bundle.text
     lines = String.split(context, "\n")
     source_count = length(context_bundle.entries)
+    structure_hint = structure_hint(context_bundle, context)
 
     source_types =
       context_bundle.entries
@@ -42,6 +43,7 @@ defmodule Rlm.Engine.Policy do
       "  - Query: #{prompt}",
       "  - Size: #{String.length(context)} characters, #{length(lines)} lines, #{source_count} source(s)",
       "  - Source types: #{source_types_display}",
+      "  - Structure hint: #{structure_hint}",
       "  - Strategy hint: #{strategy_hint}",
       "",
       "Source preview:",
@@ -86,10 +88,13 @@ defmodule Rlm.Engine.Policy do
     - Respond with ONLY a Python code block.
     - Use print() for intermediate output.
     - Treat iterations, sub-queries, tokens, and latency as a strict budget.
+    - Always start with a scouting pass: `print(len(context))`, inspect a small slice, and identify the likely structure before deeper analysis.
+    - During scouting, explicitly test simple heuristics such as file/path boundaries, week/day/date markers, repeated markdown headers, and other obvious separators.
     - Every `llm_query()` call is expensive. Minimize calls and prefer direct reasoning when the context header says the input is small or medium.
     - Do not chunk by default. Start with direct synthesis or a single targeted sub-query unless the context is clearly too large.
     - If you chunk, use the fewest chunks that could work and keep the code simple.
-    - Do not use parallel fan-out unless the context is clearly very large and the expected gain is worth the budget.
+    - After scouting, if you find a small set of independent high-value candidates, prefer parallel sub-queries with `asyncio.gather(async_llm_query(...), ...)` over slow sequential fan-out.
+    - Do not use parallel fan-out before scouting, and keep it focused on the top candidates instead of broad shotgun chunking.
     - If a sub-query raises `SubqueryError`, catch it only to change strategy or finalize from the best available answer.
     - Keep a best-so-far answer in a variable and finalize early when it is good enough.
     - Filter and slice context with Python before calling llm_query().
@@ -162,5 +167,31 @@ defmodule Rlm.Engine.Policy do
       "[TRUNCATED: Last #{truncate_length} chars shown].. " <>
         String.slice(text, -truncate_length, truncate_length)
     end
+  end
+
+  defp structure_hint(context_bundle, context) do
+    labels = Enum.map(context_bundle.entries, & &1.label)
+
+    cond do
+      labels != [] and mostly_weekly?(labels) ->
+        "Likely weekly or dated notes grouped by week-like source names."
+
+      labels != [] ->
+        "Likely file-based context assembled from source paths."
+
+      Regex.match?(~r/(^|\n)#+\s*Week[-\s_]?[0-9]+/i, context) ->
+        "Likely weekly notes split by markdown week headings."
+
+      Regex.match?(~r{(^|\n)/[^\n]+\.[A-Za-z0-9]+($|\n)}, context) ->
+        "Likely file-based context with inline path boundaries."
+
+      true ->
+        "No strong structure detected yet; scout a sample before chunking."
+    end
+  end
+
+  defp mostly_weekly?(labels) do
+    weekly_count = Enum.count(labels, &Regex.match?(~r/week[-\s_]?[0-9]+/i, Path.basename(&1)))
+    weekly_count * 2 >= length(labels)
   end
 end

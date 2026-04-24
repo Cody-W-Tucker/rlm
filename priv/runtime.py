@@ -6,6 +6,7 @@ sub-queries back to the Elixir host over line-delimited JSON.
 """
 
 import asyncio
+import concurrent.futures
 import io
 import json
 import queue
@@ -21,6 +22,7 @@ _write_lock = threading.Lock()
 _pending_results = {}
 _result_store = {}
 _command_queue = queue.Queue()
+_subquery_executor = concurrent.futures.ThreadPoolExecutor(max_workers=8)
 context = ""
 __final_result__ = None
 _user_ns = {}
@@ -30,15 +32,21 @@ class SubqueryError(RuntimeError):
     pass
 
 
-class AwaitableString(str):
-    def __new__(cls, value):
-        return super().__new__(cls, value)
+class AwaitableQuery:
+    def __init__(self, future):
+        self._future = future
 
     def __await__(self):
-        async def _done():
-            return str(self)
+        return asyncio.wrap_future(self._future).__await__()
 
-        return _done().__await__()
+    def result(self):
+        return self._future.result()
+
+    def __str__(self):
+        return self.result()
+
+    def __repr__(self):
+        return repr(self.result())
 
 
 def FINAL(value):
@@ -117,7 +125,7 @@ def llm_query(sub_context, instruction=""):
 
 
 def async_llm_query(sub_context, instruction=""):
-    return AwaitableString(llm_query(sub_context, instruction))
+    return AwaitableQuery(_subquery_executor.submit(llm_query, sub_context, instruction))
 
 
 def _refresh_user_ns():
@@ -200,4 +208,8 @@ if __name__ == "__main__":
     _write_message({"type": "ready"})
     reader = threading.Thread(target=_stdin_reader_loop, daemon=True)
     reader.start()
-    _main_loop()
+
+    try:
+        _main_loop()
+    finally:
+        _subquery_executor.shutdown(wait=False, cancel_futures=True)

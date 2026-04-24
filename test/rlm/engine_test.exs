@@ -46,6 +46,39 @@ defmodule Rlm.TestSubqueryErrorProvider do
   end
 end
 
+defmodule Rlm.TestParallelAsyncProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(_history, _system_prompt, _settings) do
+    {:ok,
+     %{
+       text: """
+       ```python
+       import asyncio
+
+       async def main():
+           results = await asyncio.gather(
+               async_llm_query(context[:3], "left"),
+               async_llm_query(context[3:], "right"),
+           )
+           answer = " | ".join(results)
+           print(answer)
+           FINAL(answer)
+
+       asyncio.run(main())
+       ```
+       """,
+       input_tokens: 0,
+       output_tokens: 0
+     }}
+  end
+
+  def complete_subquery(_sub_context, instruction, _settings) do
+    Process.sleep(250)
+    {:ok, %{text: "#{instruction} summary", input_tokens: 0, output_tokens: 0}}
+  end
+end
+
 defmodule Rlm.TestRecoveringProvider do
   @behaviour Rlm.Providers.Provider
 
@@ -130,6 +163,22 @@ defmodule Rlm.EngineTest do
     assert result.answer == "async summary"
     assert hd(result.iteration_records).stdout =~ "async summary"
     assert result.total_sub_queries == 1
+  end
+
+  test "runs async_llm_query calls in parallel with asyncio gather" do
+    settings = TestHelpers.settings(%{max_iterations: 2, max_sub_queries: 4})
+    bundle = %{entries: [], text: "abcdef", bytes: 6}
+    started_at = System.monotonic_time(:millisecond)
+
+    assert {:ok, result} =
+             Engine.run("summarize", bundle, settings, Rlm.TestParallelAsyncProvider)
+
+    elapsed = System.monotonic_time(:millisecond) - started_at
+
+    assert result.completed?
+    assert result.answer == "left summary | right summary"
+    assert result.total_sub_queries == 2
+    assert elapsed < 450
   end
 
   test "returns the best partial answer instead of a raw internal error" do

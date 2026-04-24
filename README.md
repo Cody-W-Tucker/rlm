@@ -123,7 +123,7 @@ Important settings:
 
 ## Safety Limits
 
-- up to 100 loaded files per run
+- up to 1000 loaded files per run
 - up to 10 MB of aggregate context text
 - bounded root iterations and sub-query count
 - truncated execution feedback between iterations
