@@ -56,6 +56,7 @@ defmodule Rlm.Engine.PolicyTest do
     assert prompt =~ "use `sample_files()` or `list_files()`"
     assert prompt =~ "use `grep_files()` with high-signal query terms"
     assert prompt =~ "`grep_open()` when you want immediate previews"
+    assert prompt =~ "prefer `peek_hit(hit)` or `open_hit(hit)`"
     assert prompt =~ "Prefer `peek_file()` before `read_file()`"
 
     assert prompt =~

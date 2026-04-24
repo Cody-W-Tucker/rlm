@@ -71,6 +71,12 @@ class OpenedHit(Hit):
         super().__init__(path, line, text)
         self.preview = preview
 
+    def __str__(self):
+        return f"{self.path}:{self.line}: {self.text}\n{self.preview}"
+
+    def __repr__(self):
+        return str(self)
+
 
 def FINAL(value):
     global __final_result__
@@ -214,10 +220,29 @@ def peek_file(path, limit=40, offset=1):
 
 
 def _match_preview(path, line, window):
-    before = max(0, int(window))
-    start = max(1, line - before)
-    limit = max(1, before * 2 + 1)
+    safe_window = max(0, int(window))
+    start = max(1, line - safe_window)
+    limit = max(1, safe_window * 2 + 1)
     return peek_file(path, offset=start, limit=limit)
+
+
+def peek_hit(hit, before=5, after=10):
+    if not isinstance(hit, Hit):
+        raise ValueError("hit must be a grep_files() or grep_open() result")
+
+    safe_before = max(0, min(int(before), 80))
+    safe_after = max(0, min(int(after), 80))
+    start = max(1, hit.line - safe_before)
+    limit = max(1, safe_before + safe_after + 1)
+    return peek_file(hit.path, offset=start, limit=limit)
+
+
+def open_hit(hit, window=12):
+    if not isinstance(hit, Hit):
+        raise ValueError("hit must be a grep_files() or grep_open() result")
+
+    safe_window = max(0, min(int(window), 80))
+    return OpenedHit(hit.path, hit.line, hit.text, _match_preview(hit.path, hit.line, safe_window))
 
 
 def grep_files(pattern, limit=50):
@@ -265,6 +290,8 @@ def _refresh_user_ns():
             "peek_file": peek_file,
             "grep_files": grep_files,
             "grep_open": grep_open,
+            "peek_hit": peek_hit,
+            "open_hit": open_hit,
             "llm_query": llm_query,
             "async_llm_query": async_llm_query,
             "FINAL": FINAL,

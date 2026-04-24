@@ -304,6 +304,31 @@ defmodule Rlm.TestGrepOpenProvider do
   end
 end
 
+defmodule Rlm.TestHitFollowupProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(_history, _system_prompt, _settings) do
+    {:ok,
+     %{
+       text: """
+       ```python
+       hit = grep_files("beta", limit=1)[0]
+       print(peek_hit(hit, before=1, after=1))
+       opened = open_hit(hit, window=1)
+       print(opened)
+       FINAL(opened.preview)
+       ```
+       """,
+       input_tokens: 0,
+       output_tokens: 0
+     }}
+  end
+
+  def complete_subquery(_sub_context, _instruction, _settings) do
+    {:ok, %{text: "unused", input_tokens: 0, output_tokens: 0}}
+  end
+end
+
 defmodule Rlm.TestFileShapeProvider do
   @behaviour Rlm.Providers.Provider
 
@@ -474,6 +499,28 @@ defmodule Rlm.EngineTest do
 
     assert {:ok, result} =
              Engine.run("find beta", bundle, settings, Rlm.TestGrepOpenProvider)
+
+    assert result.completed?
+    assert result.answer =~ "1: alpha"
+    assert result.answer =~ "2: beta"
+    assert result.answer =~ "3: gamma"
+
+    stdout = hd(result.iteration_records).stdout
+    assert stdout =~ "note.txt:2: beta"
+    assert stdout =~ "1: alpha"
+  end
+
+  test "peek_hit and open_hit support direct hit follow-up" do
+    tmp = TestHelpers.temp_dir("rlm-engine-hit-followup")
+    on_exit(fn -> File.rm_rf!(tmp) end)
+
+    File.write!(Path.join(tmp, "note.txt"), "alpha\nbeta\ngamma\n")
+    settings = TestHelpers.settings(%{max_iterations: 1})
+
+    assert {:ok, bundle} = Rlm.Context.Loader.load({:path, Path.join(tmp, "note.txt")}, settings)
+
+    assert {:ok, result} =
+             Engine.run("find beta", bundle, settings, Rlm.TestHitFollowupProvider)
 
     assert result.completed?
     assert result.answer =~ "1: alpha"

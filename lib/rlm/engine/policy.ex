@@ -85,10 +85,12 @@ defmodule Rlm.Engine.Policy do
     5. `read_file(path, offset=1, limit=200)`: read a specific allowed file with line numbers.
     6. `grep_files(pattern, limit=50)`: regex search across allowed files and return reusable hit objects with `.path`, `.line`, `.text`, and string rendering as `path:line: text`.
     7. `grep_open(pattern, limit=10, window=12)`: search across allowed files and return hit objects with `.path`, `.line`, `.text`, and `.preview` for immediate inspection.
-    8. `llm_query(sub_context, instruction)`: ask a sub-query over a chunk.
-    9. `async_llm_query(sub_context, instruction)`: async wrapper for parallel chunk work.
-    10. `FINAL(answer)` and `FINAL_VAR(value)`: finish with the final answer.
-    11. `SubqueryError`: exception raised when a sub-query fails.
+    8. `peek_hit(hit, before=5, after=10)`: inspect lines around a hit without manually computing file offsets.
+    9. `open_hit(hit, window=12)`: turn a hit into an opened hit with a `.preview` window around the match.
+    10. `llm_query(sub_context, instruction)`: ask a sub-query over a chunk.
+    11. `async_llm_query(sub_context, instruction)`: async wrapper for parallel chunk work.
+    12. `FINAL(answer)` and `FINAL_VAR(value)`: finish with the final answer.
+    13. `SubqueryError`: exception raised when a sub-query fails.
 
     Rules:
     - Respond with ONLY a Python code block.
@@ -100,6 +102,7 @@ defmodule Rlm.Engine.Policy do
     - For file-backed inputs, first decide whether filename/path structure is informative for this query.
     - If filename/path structure is informative, use `sample_files()` or `list_files()` to derive a small candidate set from file shape, then use `peek_file()` and `read_file()` on only the best candidates.
     - If filename/path structure is not informative, use `grep_files()` with high-signal query terms to derive a small candidate set from file contents, or `grep_open()` when you want immediate previews around the best hits.
+    - After content search, prefer `peek_hit(hit)` or `open_hit(hit)` over hardcoding paths or slicing large file strings by character count.
     - Treat file/path boundaries, week/day/date markers, and other separators as signals when useful, but do not assume they are the main retrieval strategy.
     - Avoid broad reads. Prefer `peek_file()` before `read_file()`, and recurse only on the top candidates instead of scanning everything.
     - Every `llm_query()` call is expensive. Minimize calls and prefer direct reasoning when the context header says the input is small or medium.
