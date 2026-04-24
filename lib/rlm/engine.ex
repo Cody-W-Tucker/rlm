@@ -308,14 +308,25 @@ defmodule Rlm.Engine do
         {:ok, String.trim(code)}
 
       _ ->
-        trimmed = String.trim(text)
+        trimmed = text |> strip_fence_lines() |> String.trim()
 
-        if trimmed != "" and String.contains?(trimmed, ["print(", "FINAL(", "llm_query(", "for "]) do
-          {:ok, trimmed}
-        else
-          {:error, "Could not extract Python code from provider response."}
+        cond do
+          trimmed == "" ->
+            {:error, "Could not extract Python code from provider response."}
+
+          String.contains?(trimmed, ["print(", "FINAL(", "FINAL_VAR(", "llm_query(", "for "]) ->
+            {:ok, trimmed}
+
+          true ->
+            {:error, "Could not extract Python code from provider response."}
         end
     end
+  end
+
+  defp strip_fence_lines(text) do
+    text
+    |> String.replace(~r/^```[a-zA-Z0-9_-]*\s*\n?/, "")
+    |> String.replace(~r/\n?```\s*$/, "")
   end
 
   defp finalize_result(prompt, answer, status, completed?, iterations, records, run_state) do

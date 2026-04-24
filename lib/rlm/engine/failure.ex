@@ -83,6 +83,9 @@ defmodule Rlm.Engine.Failure do
           String.contains?(message, "exited with status") ->
         build(:runtime_shutdown, :runtime, message, true)
 
+      String.contains?(message, "SyntaxError") and String.contains?(message, "```") ->
+        build(:python_exec_error, :runtime, message, true)
+
       String.contains?(message, "async") or String.contains?(message, "AwaitableString") ->
         build(:async_failed, :runtime, message, true)
 

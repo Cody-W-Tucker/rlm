@@ -106,6 +106,35 @@ defmodule Rlm.TestRecoveringProvider do
   end
 end
 
+defmodule Rlm.TestMalformedFenceProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(_history, _system_prompt, _settings) do
+    {:ok,
+     %{
+       text: "```\n# The user probably wants Markdown fences here\nFINAL(\"should not execute\")",
+       input_tokens: 0,
+       output_tokens: 0
+     }}
+  end
+
+  def complete_subquery(_sub_context, _instruction, _settings) do
+    {:ok, %{text: "unused", input_tokens: 0, output_tokens: 0}}
+  end
+end
+
+defmodule Rlm.TestPlainPythonProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(_history, _system_prompt, _settings) do
+    {:ok, %{text: "FINAL(\"plain python works\")", input_tokens: 0, output_tokens: 0}}
+  end
+
+  def complete_subquery(_sub_context, _instruction, _settings) do
+    {:ok, %{text: "unused", input_tokens: 0, output_tokens: 0}}
+  end
+end
+
 defmodule Rlm.EngineTest do
   use ExUnit.Case, async: false
 
@@ -152,6 +181,28 @@ defmodule Rlm.EngineTest do
     assert {:ok, result} = Engine.run("loop forever", bundle, settings, Rlm.TestLoopProvider)
     assert result.status == :max_iterations
     refute result.completed?
+  end
+
+  test "strips malformed fenced responses before execution" do
+    settings = TestHelpers.settings(%{max_iterations: 1})
+    bundle = %{entries: [], text: "abcdef", bytes: 6}
+
+    assert {:ok, result} =
+             Engine.run("summarize", bundle, settings, Rlm.TestMalformedFenceProvider)
+
+    assert result.completed?
+    assert result.answer == "should not execute"
+    assert length(result.iteration_records) == 1
+  end
+
+  test "still accepts unfenced plain python responses" do
+    settings = TestHelpers.settings(%{max_iterations: 1})
+    bundle = %{entries: [], text: "abcdef", bytes: 6}
+
+    assert {:ok, result} = Engine.run("summarize", bundle, settings, Rlm.TestPlainPythonProvider)
+
+    assert result.completed?
+    assert result.answer == "plain python works"
   end
 
   test "handles async_llm_query when model code forgets to await it" do
