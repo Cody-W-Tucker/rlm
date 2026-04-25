@@ -1,0 +1,51 @@
+I am going to scout the vault first, then narrow to the most philosophically interesting concepts.
+
+```python
+ROOT = "__ROOT__"
+print("=== Sampling files to understand corpus shape ===")
+print(sample_files(8))
+```
+
+The filenames alone are not enough, so I should also inspect content-level signals.
+
+```
+print("=== Searching for philosophical and identity concepts ===")
+hits = grep_open("existential|identity|introspection|belief|meaning", limit=6, window=1)
+for hit in hits[:3]:
+    print(hit)
+```
+
+Now I will read the strongest files directly.
+
+```python
+aimlessness = read_file(f"{ROOT}/Aimlessness.md", limit=60)
+sexual = read_file(f"{ROOT}/Sexuality/Sexual Urges Are Elusive to Introspection.md", limit=60)
+belief = read_file(f"{ROOT}/Belief.md", limit=60)
+print("=== Loaded key files ===")
+print(aimlessness[:300])
+print(sexual[:300])
+print(belief[:300])
+```
+
+I will analyze the strongest candidates in parallel.
+
+```python
+import asyncio
+
+instruction = "Extract the most philosophically novel concept in 1 sentence."
+
+async def analyze():
+    return await asyncio.gather(
+        async_llm_query(aimlessness[:1200], instruction),
+        async_llm_query(sexual[:1200], instruction),
+        async_llm_query(belief[:1200], instruction),
+    )
+
+analyses = asyncio.run(analyze())
+for item in analyses:
+    print(item)
+```
+
+```python
+FINAL("\n".join(analyses))
+```

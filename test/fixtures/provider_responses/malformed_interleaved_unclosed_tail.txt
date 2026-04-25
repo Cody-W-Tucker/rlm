@@ -1,0 +1,22 @@
+I will do a smaller recovery-mode style pass.
+
+```python
+ROOT = "__ROOT__"
+print("=== Reading key file ===")
+aimlessness = read_file(f"{ROOT}/Aimlessness.md", limit=40)
+print(aimlessness[:200])
+```
+
+I also want a quick content search before finalizing.
+
+```
+print("=== Searching related concepts ===")
+hits = grep_files("belief|introspection", limit=5)
+for hit in hits[:2]:
+    print(hit)
+```
+
+This final block is left open the way a model sometimes does after prose.
+
+```python
+FINAL("fixture recovered from malformed response")

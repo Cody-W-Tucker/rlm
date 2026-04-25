@@ -331,17 +331,7 @@ defmodule Rlm.Engine do
   end
 
   defp extract_code_blocks(text) do
-    fenced_blocks =
-      Regex.scan(~r/```([a-zA-Z0-9_-]*)\s*\n([\s\S]*?)```/, text, capture: :all_but_first)
-      |> Enum.reduce([], fn [language, code], acc ->
-        trimmed = String.trim(code)
-
-        if trimmed != "" and (language in ["python", "py", "repl"] or looks_like_python?(trimmed)) do
-          acc ++ [trimmed]
-        else
-          acc
-        end
-      end)
+    fenced_blocks = extract_fenced_blocks(text)
 
     cond do
       fenced_blocks != [] ->
@@ -366,6 +356,51 @@ defmodule Rlm.Engine do
             {:error, "Could not extract Python code from provider response."}
         end
     end
+  end
+
+  defp extract_fenced_blocks(text) do
+    {blocks, current_language, current_lines} =
+      text
+      |> String.split("\n")
+      |> Enum.reduce({[], nil, []}, fn line, {blocks, current_language, current_lines} ->
+        case Regex.run(~r/^```\s*([a-zA-Z0-9_-]*)\s*$/, line, capture: :all_but_first) do
+          [language] when current_language == nil ->
+            {blocks, language, []}
+
+          [_language] ->
+            block = maybe_build_block(current_language, current_lines)
+            next_blocks = if block, do: blocks ++ [block], else: blocks
+            {next_blocks, nil, []}
+
+          nil when current_language == nil ->
+            {blocks, nil, []}
+
+          nil ->
+            {blocks, current_language, current_lines ++ [line]}
+        end
+      end)
+
+    blocks =
+      case maybe_build_block(current_language, current_lines) do
+        nil -> blocks
+        block -> blocks ++ [block]
+      end
+
+    Enum.reduce(blocks, [], fn {language, code}, acc ->
+      trimmed = String.trim(code)
+
+      if trimmed != "" and (language in ["python", "py", "repl"] or looks_like_python?(trimmed)) do
+        acc ++ [trimmed]
+      else
+        acc
+      end
+    end)
+  end
+
+  defp maybe_build_block(nil, _lines), do: nil
+
+  defp maybe_build_block(language, lines) do
+    {language, Enum.join(lines, "\n")}
   end
 
   defp execute_code_blocks(repl, [first | rest]) do

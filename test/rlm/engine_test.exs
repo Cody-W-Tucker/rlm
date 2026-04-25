@@ -181,6 +181,33 @@ defmodule Rlm.TestMultiFenceProvider do
   end
 end
 
+defmodule Rlm.TestMultiFenceUnclosedTailProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(_history, _system_prompt, _settings) do
+    {:ok,
+     %{
+       text: """
+       ```python
+       value = "alpha"
+       print(value)
+       ```
+
+       ```
+       value = value + " beta"
+       print(value)
+       FINAL(value)
+       """,
+       input_tokens: 0,
+       output_tokens: 0
+     }}
+  end
+
+  def complete_subquery(_sub_context, _instruction, _settings) do
+    {:ok, %{text: "unused", input_tokens: 0, output_tokens: 0}}
+  end
+end
+
 defmodule Rlm.TestProseThenPythonProvider do
   @behaviour Rlm.Providers.Provider
 
@@ -195,6 +222,30 @@ defmodule Rlm.TestProseThenPythonProvider do
 
   def complete_subquery(_sub_context, _instruction, _settings) do
     {:ok, %{text: "unused", input_tokens: 0, output_tokens: 0}}
+  end
+end
+
+defmodule Rlm.TestFixtureProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(_history, _system_prompt, _settings) do
+    {:ok,
+     %{
+       text: Application.fetch_env!(:rlm, :test_fixture_response),
+       input_tokens: 0,
+       output_tokens: 0
+     }}
+  end
+
+  def complete_subquery(sub_context, instruction, settings) do
+    handler =
+      Application.get_env(:rlm, :test_fixture_subquery_handler, fn _sub_context,
+                                                                   _instruction,
+                                                                   _settings ->
+        {:ok, %{text: "fixture summary", input_tokens: 0, output_tokens: 0}}
+      end)
+
+    handler.(sub_context, instruction, settings)
   end
 end
 
@@ -388,6 +439,42 @@ defmodule Rlm.EngineTest do
   alias Rlm.Engine
   alias Rlm.TestHelpers
 
+  defp fixture_response(name, replacements) do
+    path = Path.expand("../fixtures/provider_responses/#{name}", __DIR__)
+
+    Enum.reduce(replacements, File.read!(path), fn {needle, replacement}, acc ->
+      String.replace(acc, needle, replacement)
+    end)
+  end
+
+  defp put_fixture_response(text) do
+    Application.put_env(:rlm, :test_fixture_response, text)
+
+    on_exit(fn ->
+      Application.delete_env(:rlm, :test_fixture_response)
+      Application.delete_env(:rlm, :test_fixture_subquery_handler)
+    end)
+  end
+
+  defp build_fixture_corpus(tmp) do
+    File.mkdir_p!(Path.join(tmp, "Sexuality"))
+
+    File.write!(
+      Path.join(tmp, "Aimlessness.md"),
+      "# Aimlessness\n\nAimlessness can feel existential when unused potential presses on identity.\n"
+    )
+
+    File.write!(
+      Path.join(tmp, "Belief.md"),
+      "# Belief Construction\n\nBelief can arise from experience and alter the sense of time and meaning.\n"
+    )
+
+    File.write!(
+      Path.join(tmp, "Sexuality/Sexual Urges Are Elusive to Introspection.md"),
+      "# Sexual Urges Are Elusive to Introspection\n\nSome drives resist direct introspection and are known mostly through effects.\n"
+    )
+  end
+
   defmodule PartialThenErrorProvider do
     @behaviour Rlm.Providers.Provider
 
@@ -469,6 +556,18 @@ defmodule Rlm.EngineTest do
     assert record.code =~ "FINAL(value)"
   end
 
+  test "salvages an unclosed final fenced block after earlier blocks" do
+    settings = TestHelpers.settings(%{max_iterations: 1})
+    bundle = %{entries: [], text: "abcdef", bytes: 6}
+
+    assert {:ok, result} =
+             Engine.run("summarize", bundle, settings, Rlm.TestMultiFenceUnclosedTailProvider)
+
+    assert result.completed?
+    assert result.answer == "alpha beta"
+    assert length(result.iteration_records) == 1
+  end
+
   test "salvages prose followed by plain python" do
     settings = TestHelpers.settings(%{max_iterations: 1})
     bundle = %{entries: [], text: "abcdef", bytes: 6}
@@ -479,6 +578,70 @@ defmodule Rlm.EngineTest do
     assert result.completed?
     assert result.answer == "salvaged from prose"
     assert result.failure_history == []
+  end
+
+  test "executes staged multi-block fixture responses seen in the wild" do
+    tmp = TestHelpers.temp_dir("rlm-engine-fixture-staged")
+    on_exit(fn -> File.rm_rf!(tmp) end)
+    build_fixture_corpus(tmp)
+
+    put_fixture_response(fixture_response("wild_staged_plan.txt", [{"__ROOT__", tmp}]))
+
+    Application.put_env(:rlm, :test_fixture_subquery_handler, fn sub_context,
+                                                                 _instruction,
+                                                                 _settings ->
+      title =
+        cond do
+          String.contains?(sub_context, "Aimlessness") -> "aimlessness summary"
+          String.contains?(sub_context, "Sexual Urges") -> "sexual urges summary"
+          String.contains?(sub_context, "Belief Construction") -> "belief summary"
+          true -> "fixture summary"
+        end
+
+      {:ok, %{text: title, input_tokens: 0, output_tokens: 0}}
+    end)
+
+    settings = TestHelpers.settings(%{max_iterations: 1, max_sub_queries: 5})
+    assert {:ok, bundle} = Rlm.Context.Loader.load({:path, tmp}, settings)
+
+    assert {:ok, result} = Engine.run("summarize", bundle, settings, Rlm.TestFixtureProvider)
+
+    assert result.completed?
+    assert result.failure_history == []
+    assert length(result.iteration_records) == 1
+    assert result.total_sub_queries == 3
+    assert result.answer =~ "aimlessness summary"
+    assert result.answer =~ "sexual urges summary"
+    assert result.answer =~ "belief summary"
+
+    stdout = hd(result.iteration_records).stdout
+    assert stdout =~ "=== Sampling files to understand corpus shape ==="
+    assert stdout =~ "=== Searching for philosophical and identity concepts ==="
+    assert stdout =~ "=== Loaded key files ==="
+  end
+
+  test "salvages malformed interleaved fixture responses from the wild" do
+    tmp = TestHelpers.temp_dir("rlm-engine-fixture-malformed")
+    on_exit(fn -> File.rm_rf!(tmp) end)
+    build_fixture_corpus(tmp)
+
+    put_fixture_response(
+      fixture_response("malformed_interleaved_unclosed_tail.txt", [{"__ROOT__", tmp}])
+    )
+
+    settings = TestHelpers.settings(%{max_iterations: 1})
+    assert {:ok, bundle} = Rlm.Context.Loader.load({:path, tmp}, settings)
+
+    assert {:ok, result} = Engine.run("summarize", bundle, settings, Rlm.TestFixtureProvider)
+
+    assert result.completed?
+    assert result.failure_history == []
+    assert length(result.iteration_records) == 1
+    assert result.answer == "fixture recovered from malformed response"
+
+    stdout = hd(result.iteration_records).stdout
+    assert stdout =~ "=== Reading key file ==="
+    assert stdout =~ "=== Searching related concepts ==="
   end
 
   test "uses successful silent sub-query text as the best partial answer" do
