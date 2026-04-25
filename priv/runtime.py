@@ -30,6 +30,12 @@ _file_sources = []
 _file_source_set = set()
 __final_result__ = None
 _user_ns = {}
+_evidence = {
+    "search_patterns": [],
+    "hit_paths": set(),
+    "previewed_files": set(),
+    "read_files": set(),
+}
 
 
 class SubqueryError(RuntimeError):
@@ -208,6 +214,12 @@ def read_file(path, offset=1, limit=200):
     safe_offset = max(1, int(offset))
     safe_limit = max(1, min(int(limit), 1000))
 
+    _evidence["read_files"].add(normalized)
+
+    return _read_file_lines(normalized, safe_offset, safe_limit)
+
+
+def _read_file_lines(normalized, safe_offset, safe_limit):
     with open(normalized, "r", encoding="utf-8") as handle:
         lines = handle.read().splitlines()
 
@@ -216,7 +228,11 @@ def read_file(path, offset=1, limit=200):
 
 
 def peek_file(path, limit=40, offset=1):
-    return read_file(path, offset=offset, limit=min(int(limit), 80))
+    normalized = _normalize_allowed_path(path)
+    safe_offset = max(1, int(offset))
+    safe_limit = max(1, min(int(limit), 80))
+    _evidence["previewed_files"].add(normalized)
+    return _read_file_lines(normalized, safe_offset, safe_limit)
 
 
 def _match_preview(path, line, window):
@@ -249,11 +265,13 @@ def grep_files(pattern, limit=50):
     compiled = re.compile(pattern)
     safe_limit = max(1, min(int(limit), 500))
     matches = []
+    _evidence["search_patterns"].append(pattern)
 
     for path in _file_sources:
         with open(path, "r", encoding="utf-8") as handle:
             for number, line in enumerate(handle, start=1):
                 if compiled.search(line):
+                    _evidence["hit_paths"].add(path)
                     matches.append(Hit(path, number, line.rstrip(chr(10))))
                     if len(matches) >= safe_limit:
                         return matches
@@ -266,12 +284,14 @@ def grep_open(pattern, limit=10, window=12):
     safe_limit = max(1, min(int(limit), 200))
     safe_window = max(0, min(int(window), 80))
     matches = []
+    _evidence["search_patterns"].append(pattern)
 
     for path in _file_sources:
         with open(path, "r", encoding="utf-8") as handle:
             for number, line in enumerate(handle, start=1):
                 text = line.rstrip(chr(10))
                 if compiled.search(line):
+                    _evidence["hit_paths"].add(path)
                     matches.append(OpenedHit(path, number, text, _match_preview(path, number, safe_window)))
                     if len(matches) >= safe_limit:
                         return matches
@@ -442,6 +462,9 @@ def _try_async_wrapper_exec(code, captured_stderr):
 
 
 def _build_exec_result(captured_stdout, captured_stderr, meta):
+    details = dict(meta.get("details") or {})
+    details["evidence"] = _evidence_snapshot()
+
     return {
         "type": "exec_done",
         "stdout": captured_stdout.getvalue(),
@@ -451,7 +474,27 @@ def _build_exec_result(captured_stdout, captured_stderr, meta):
         "status": meta.get("status", "ok"),
         "error_kind": meta.get("error_kind"),
         "recovery_kind": meta.get("recovery_kind"),
-        "details": meta.get("details") or {},
+        "details": details,
+    }
+
+
+def _evidence_snapshot():
+    return {
+        "search_count": len(_evidence["search_patterns"]),
+        "search_patterns": list(_evidence["search_patterns"]),
+        "hit_paths": sorted(_evidence["hit_paths"]),
+        "previewed_files": sorted(_evidence["previewed_files"]),
+        "read_files": sorted(_evidence["read_files"]),
+    }
+
+
+def _reset_tracking():
+    global _evidence
+    _evidence = {
+        "search_patterns": [],
+        "hit_paths": set(),
+        "previewed_files": set(),
+        "read_files": set(),
     }
 
 
@@ -515,6 +558,7 @@ def _main_loop():
             _write_message({"type": "file_sources_set"})
         elif msg_type == "reset_final":
             __final_result__ = None
+            _reset_tracking()
             _write_message({"type": "final_reset"})
 
 

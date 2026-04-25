@@ -34,7 +34,9 @@ defmodule Rlm.Engine.Prompt.Base do
     13. `SubqueryError`: exception raised when a sub-query fails.
 
     Rules:
-    - Respond with ONLY a Python code block.
+    - Respond with ONLY a single Python code block.
+    - Your very first characters must be ```python and your final characters must be ```.
+    - Do not write any prose, bullets, or explanation outside the Python fence.
     - Use print() for intermediate output.
     - Treat iterations, sub-queries, tokens, and latency as a strict budget.
     - Always start with a scouting pass: inspect the context header, then use `print(len(context))` for preloaded text or `print(sample_files())` / `print(list_files())` for file-backed inputs before reading deeply.
@@ -46,6 +48,7 @@ defmodule Rlm.Engine.Prompt.Base do
     - After content search, prefer `peek_hit(hit)` or `open_hit(hit)` over hardcoding paths or slicing large file strings by character count.
     - Treat file/path boundaries, week/day/date markers, and other separators as signals when useful, but do not assume they are the main retrieval strategy.
     - Avoid broad reads. Prefer `peek_file()` before `read_file()`, and recurse only on the top candidates instead of scanning everything.
+    - After 2-3 search rounds, stop expanding the search space. Build a small evidence set from the strongest inspected files and finalize from that.
     - Every `llm_query()` call is expensive. Minimize calls and prefer direct reasoning when the context header says the input is small or medium.
     - Do not chunk by default. Start with direct synthesis or a single targeted sub-query unless the context is clearly too large.
     - If you chunk, use the fewest chunks that could work and keep the code simple.

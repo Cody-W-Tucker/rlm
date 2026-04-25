@@ -27,6 +27,10 @@ defmodule Rlm.Engine.Recovery.Strategy do
     "Do not issue more sub-queries. Finalize from the best available evidence now."
   end
 
+  def recovery_instruction(%Failure{class: :ungrounded_final_answer}) do
+    "Do not keep expanding the search. Inspect the specific missing files you cited or remove those unsupported claims, then finalize from the verified evidence set."
+  end
+
   def recovery_instruction(_failure) do
     "Use a simpler strategy than the previous iteration and avoid repeating the same failure pattern."
   end

@@ -3,6 +3,7 @@ defmodule Rlm.Engine do
 
   alias Rlm.Engine.Failure
   alias Rlm.Engine.Execution.BlockRunner
+  alias Rlm.Engine.Grounding.Policy, as: GroundingPolicy
   alias Rlm.Engine.Policy
   alias Rlm.Engine.Recovery
   alias Rlm.Engine.Response.Extractor
@@ -55,11 +56,23 @@ defmodule Rlm.Engine do
       %{role: "user", content: Policy.context_metadata(context_bundle, settings, prompt)}
     ]
 
-    execute_iterations(prompt, settings, provider_module, repl, run_state, opts, history, [], 1)
+    execute_iterations(
+      prompt,
+      context_bundle,
+      settings,
+      provider_module,
+      repl,
+      run_state,
+      opts,
+      history,
+      [],
+      1
+    )
   end
 
   defp execute_iterations(
          prompt,
+         _context_bundle,
          settings,
          _provider_module,
          _repl,
@@ -82,6 +95,7 @@ defmodule Rlm.Engine do
 
   defp execute_iterations(
          prompt,
+         context_bundle,
          settings,
          provider_module,
          repl,
@@ -102,6 +116,7 @@ defmodule Rlm.Engine do
 
         handle_generated_iteration(
           prompt,
+          context_bundle,
           settings,
           provider_module,
           repl,
@@ -116,6 +131,7 @@ defmodule Rlm.Engine do
       {:error, reason} ->
         handle_failure(
           prompt,
+          context_bundle,
           Failure.from_stage(:provider, reason),
           settings,
           provider_module,
@@ -131,6 +147,7 @@ defmodule Rlm.Engine do
 
   defp handle_generated_iteration(
          prompt,
+         context_bundle,
          settings,
          provider_module,
          repl,
@@ -148,7 +165,10 @@ defmodule Rlm.Engine do
 
         case BlockRunner.execute_code_blocks(repl, code_blocks) do
           {:ok, exec_result} ->
-            RunState.remember_best_answer_from_exec(run_state, exec_result)
+            if not exec_result.has_final do
+              RunState.remember_best_answer_from_exec(run_state, exec_result)
+            end
+
             emit_iteration_output(opts[:on_event], iteration, exec_result)
 
             record = %{
@@ -167,7 +187,7 @@ defmodule Rlm.Engine do
 
             next_records = records ++ [record]
 
-            case RuntimeOutcome.classify(exec_result) do
+            case classify_exec_result(context_bundle, exec_result) do
               {:finalized, final_answer} ->
                 RunState.remember_best_answer(run_state, final_answer, :final_value)
 
@@ -187,6 +207,7 @@ defmodule Rlm.Engine do
 
                 handle_failure(
                   prompt,
+                  context_bundle,
                   failure,
                   settings,
                   provider_module,
@@ -203,6 +224,7 @@ defmodule Rlm.Engine do
 
                 handle_failure(
                   prompt,
+                  context_bundle,
                   failure,
                   settings,
                   provider_module,
@@ -233,6 +255,7 @@ defmodule Rlm.Engine do
 
                 execute_iterations(
                   prompt,
+                  context_bundle,
                   settings,
                   provider_module,
                   repl,
@@ -247,6 +270,7 @@ defmodule Rlm.Engine do
           {:error, reason} ->
             handle_failure(
               prompt,
+              context_bundle,
               Failure.from_stage(:runtime, reason),
               settings,
               provider_module,
@@ -262,6 +286,7 @@ defmodule Rlm.Engine do
       {:error, reason} ->
         handle_failure(
           prompt,
+          context_bundle,
           Failure.from_stage(:response_format, reason),
           settings,
           provider_module,
@@ -277,6 +302,7 @@ defmodule Rlm.Engine do
 
   defp handle_failure(
          prompt,
+         context_bundle,
          failure,
          settings,
          provider_module,
@@ -299,6 +325,7 @@ defmodule Rlm.Engine do
 
       execute_iterations(
         prompt,
+        context_bundle,
         settings,
         provider_module,
         repl,
@@ -310,6 +337,26 @@ defmodule Rlm.Engine do
       )
     else
       {:ok, error_result(prompt, failure, run_state, iteration, records)}
+    end
+  end
+
+  defp classify_exec_result(context_bundle, exec_result) do
+    cond do
+      exec_result.has_final and is_binary(exec_result.final_value) and
+          String.trim(exec_result.final_value) != "" ->
+        final_answer = String.trim(exec_result.final_value)
+
+        case GroundingPolicy.validate_final_answer(
+               context_bundle,
+               final_answer,
+               exec_result.details || %{}
+             ) do
+          :ok -> {:finalized, final_answer}
+          {:error, reason} -> {:recoverable_failure, Failure.from_stage(:grounding, reason)}
+        end
+
+      true ->
+        RuntimeOutcome.classify(exec_result)
     end
   end
 

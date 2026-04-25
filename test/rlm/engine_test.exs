@@ -500,6 +500,75 @@ defmodule Rlm.TestFileShapeProvider do
   end
 end
 
+defmodule Rlm.TestEvidenceTrackingProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(_history, _system_prompt, _settings) do
+    {:ok,
+     %{
+       text: """
+       ```python
+       files = sample_files(3)
+       preview = peek_file(files[0], limit=2)
+       hits = grep_open("identity|meaning", limit=2, window=1)
+       content = read_file(files[1], limit=2)
+       print(preview)
+       print(hits)
+       FINAL(content)
+       ```
+       """,
+       input_tokens: 0,
+       output_tokens: 0
+     }}
+  end
+
+  def complete_subquery(_sub_context, _instruction, _settings) do
+    {:ok, %{text: "unused", input_tokens: 0, output_tokens: 0}}
+  end
+end
+
+defmodule Rlm.TestUngroundedCitationRecoveryProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(history, _system_prompt, _settings) do
+    if Enum.any?(
+         history,
+         &String.contains?(&1.content, "Final answer cited file paths without inspecting them")
+       ) do
+      {:ok,
+       %{
+         text: """
+         ```python
+         target = [path for path in list_files() if path.endswith("Aimlessness.md")][0]
+         content = read_file(target, limit=5)
+         print(content)
+         FINAL(f"Recovered with inspected evidence from `\#{target}`")
+         ```
+         """,
+         input_tokens: 0,
+         output_tokens: 0
+       }}
+    else
+      {:ok,
+       %{
+         text: """
+         ```python
+         target = [path for path in list_files() if path.endswith("Belief.md")][0]
+         print(read_file(target, limit=5))
+         FINAL("Unsupported citation from `/tmp/placeholder/Aimlessness.md`")
+         ```
+         """,
+         input_tokens: 0,
+         output_tokens: 0
+       }}
+    end
+  end
+
+  def complete_subquery(_sub_context, _instruction, _settings) do
+    {:ok, %{text: "unused", input_tokens: 0, output_tokens: 0}}
+  end
+end
+
 defmodule Rlm.EngineTest do
   use ExUnit.Case, async: false
 
@@ -805,6 +874,49 @@ defmodule Rlm.EngineTest do
     assert result.completed?
     assert result.answer == "1: alpha\n2: beta"
     assert hd(result.iteration_records).stdout =~ "note.txt"
+  end
+
+  test "tracks structured evidence from searches, previews, and reads" do
+    tmp = TestHelpers.temp_dir("rlm-engine-evidence")
+    on_exit(fn -> File.rm_rf!(tmp) end)
+
+    build_fixture_corpus(tmp)
+    settings = TestHelpers.settings(%{max_iterations: 1})
+
+    assert {:ok, bundle} = Rlm.Context.Loader.load({:path, tmp}, settings)
+
+    assert {:ok, result} =
+             Engine.run("summarize", bundle, settings, Rlm.TestEvidenceTrackingProvider)
+
+    assert result.completed?
+
+    evidence = get_in(hd(result.iteration_records), [:details, "evidence"])
+    assert evidence["search_count"] >= 1
+    assert length(evidence["previewed_files"]) >= 1
+    assert length(evidence["read_files"]) >= 1
+    assert length(evidence["hit_paths"]) >= 1
+  end
+
+  test "recovers when final answer cites unread file paths" do
+    tmp = TestHelpers.temp_dir("rlm-engine-grounding")
+    on_exit(fn -> File.rm_rf!(tmp) end)
+
+    build_fixture_corpus(tmp)
+    settings = TestHelpers.settings(%{max_iterations: 3})
+
+    assert {:ok, bundle} = Rlm.Context.Loader.load({:path, tmp}, settings)
+
+    assert {:ok, result} =
+             Engine.run("summarize", bundle, settings, Rlm.TestUngroundedCitationRecoveryProvider)
+
+    assert result.completed?
+    assert result.answer =~ "Recovered with inspected evidence"
+    assert length(result.failure_history) == 1
+
+    failure = hd(result.failure_history)
+    assert failure.class == :ungrounded_final_answer
+    assert failure.message =~ "without inspecting them in this run"
+    assert failure.message =~ "Aimlessness.md"
   end
 
   test "grep_files returns reusable hit objects" do

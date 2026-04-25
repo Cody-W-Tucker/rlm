@@ -47,6 +47,9 @@ defmodule Rlm.Engine.PolicyTest do
     prompt = Policy.system_prompt(settings, 1, run_state)
 
     assert prompt =~ "Always start with a scouting pass"
+    assert prompt =~ "ONLY a single Python code block"
+    assert prompt =~ "very first characters must be ```python"
+    assert prompt =~ "After 2-3 search rounds, stop expanding the search space"
 
     assert prompt =~
              "look for the content patterns most likely to answer the prompt"

@@ -1,6 +1,8 @@
 defmodule Rlm.Engine.Prompt.IterationFeedback do
   @moduledoc false
 
+  alias Rlm.Engine.Grounding.Policy, as: GroundingPolicy
+
   def build(exec_result, settings, iteration, run_state) do
     parts = []
 
@@ -45,10 +47,13 @@ defmodule Rlm.Engine.Prompt.IterationFeedback do
         nil
       end
 
+    consolidation_note = consolidation_note(exec_result)
+
     (parts ++
        [
          "Iteration #{iteration}/#{settings.max_iterations}. Sub-queries used: #{run_state.total_sub_queries}/#{settings.max_sub_queries}.",
          best_answer_note,
+         consolidation_note,
          subquery_candidate_note,
          "Continue processing or call FINAL() when you have the answer."
        ])
@@ -62,6 +67,16 @@ defmodule Rlm.Engine.Prompt.IterationFeedback do
     else
       "[TRUNCATED: Last #{truncate_length} chars shown].. " <>
         String.slice(text, -truncate_length, truncate_length)
+    end
+  end
+
+  defp consolidation_note(exec_result) do
+    evidence = GroundingPolicy.evidence(exec_result.details || %{})
+
+    if evidence.search_count >= 3 do
+      "You have already done multiple search rounds. Stop expanding search, choose the strongest inspected evidence, and finalize from that small working set."
+    else
+      nil
     end
   end
 end
