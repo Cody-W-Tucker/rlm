@@ -26,6 +26,7 @@ defmodule Rlm.Engine.PolicyTest do
              "Structure hint: Likely weekly or dated notes grouped by week-like source names."
 
     assert metadata =~ "File-backed sources: 2"
+    assert metadata =~ "Grounding hint: Base the final answer on retrieved evidence"
     assert metadata =~ "Metadata budget: constant-size summary only"
     refute metadata =~ "/tmp/Week-09-2025.md"
     refute metadata =~ "First 20 files"

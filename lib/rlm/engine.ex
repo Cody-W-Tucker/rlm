@@ -2,8 +2,10 @@ defmodule Rlm.Engine do
   @moduledoc "RLM orchestration loop over a persistent Python REPL."
 
   alias Rlm.Engine.Failure
+  alias Rlm.Engine.Execution.BlockRunner
   alias Rlm.Engine.Policy
   alias Rlm.Engine.Recovery
+  alias Rlm.Engine.Response.Extractor
   alias Rlm.Engine.RuntimeOutcome
   alias Rlm.Engine.RunState
   alias Rlm.Providers.RequestManager
@@ -139,12 +141,12 @@ defmodule Rlm.Engine do
          iteration,
          root_response
        ) do
-    case extract_code_blocks(root_response.text) do
+    case Extractor.extract_code_blocks(root_response.text) do
       {:ok, code_blocks} ->
         code = Enum.join(code_blocks, "\n\n")
         emit(opts[:on_event], %{type: :generated_code, iteration: iteration, code: code})
 
-        case execute_code_blocks(repl, code_blocks) do
+        case BlockRunner.execute_code_blocks(repl, code_blocks) do
           {:ok, exec_result} ->
             RunState.remember_best_answer_from_exec(run_state, exec_result)
             emit_iteration_output(opts[:on_event], iteration, exec_result)
@@ -328,214 +330,6 @@ defmodule Rlm.Engine do
           {:error, reason}
       end
     end
-  end
-
-  defp extract_code_blocks(text) do
-    fenced_blocks = extract_fenced_blocks(text)
-
-    cond do
-      fenced_blocks != [] ->
-        {:ok, fenced_blocks}
-
-      true ->
-        trimmed =
-          text
-          |> first_likely_fenced_block()
-          |> strip_fence_lines()
-          |> salvage_python_tail()
-          |> String.trim()
-
-        cond do
-          trimmed == "" ->
-            {:error, "Could not extract Python code from provider response."}
-
-          looks_like_python?(trimmed) ->
-            {:ok, [trimmed]}
-
-          true ->
-            {:error, "Could not extract Python code from provider response."}
-        end
-    end
-  end
-
-  defp extract_fenced_blocks(text) do
-    {blocks, current_language, current_lines} =
-      text
-      |> String.split("\n")
-      |> Enum.reduce({[], nil, []}, fn line, {blocks, current_language, current_lines} ->
-        case Regex.run(~r/^```\s*([a-zA-Z0-9_-]*)\s*$/, line, capture: :all_but_first) do
-          [language] when current_language == nil ->
-            {blocks, language, []}
-
-          [_language] ->
-            block = maybe_build_block(current_language, current_lines)
-            next_blocks = if block, do: blocks ++ [block], else: blocks
-            {next_blocks, nil, []}
-
-          nil when current_language == nil ->
-            {blocks, nil, []}
-
-          nil ->
-            {blocks, current_language, current_lines ++ [line]}
-        end
-      end)
-
-    blocks =
-      case maybe_build_block(current_language, current_lines) do
-        nil -> blocks
-        block -> blocks ++ [block]
-      end
-
-    Enum.reduce(blocks, [], fn {language, code}, acc ->
-      trimmed = String.trim(code)
-
-      if trimmed != "" and (language in ["python", "py", "repl"] or looks_like_python?(trimmed)) do
-        acc ++ [trimmed]
-      else
-        acc
-      end
-    end)
-  end
-
-  defp maybe_build_block(nil, _lines), do: nil
-
-  defp maybe_build_block(language, lines) do
-    {language, Enum.join(lines, "\n")}
-  end
-
-  defp execute_code_blocks(repl, code_blocks) do
-    total_blocks = length(code_blocks)
-
-    case code_blocks do
-      [first | rest] ->
-        with {:ok, initial_result} <- PythonRepl.execute(repl, first) do
-          initial_result = annotate_exec_result(initial_result, 1, first, total_blocks)
-          continue_code_blocks(repl, rest, initial_result, 2, total_blocks)
-        end
-
-      [] ->
-        {:error, "No code blocks to execute."}
-    end
-  end
-
-  defp continue_code_blocks(_repl, [], exec_result, _index, _total_blocks), do: {:ok, exec_result}
-
-  defp continue_code_blocks(_repl, _remaining, exec_result, _index, _total_blocks)
-       when exec_result.has_final or exec_result.status == :error do
-    {:ok, exec_result}
-  end
-
-  defp continue_code_blocks(repl, [code | rest], aggregate, index, total_blocks) do
-    case PythonRepl.execute(repl, code) do
-      {:ok, next_result} ->
-        next_result = annotate_exec_result(next_result, index, code, total_blocks)
-        merged = merge_exec_results(aggregate, next_result)
-
-        if merged.has_final or merged.status == :error do
-          {:ok, merged}
-        else
-          continue_code_blocks(repl, rest, merged, index + 1, total_blocks)
-        end
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
-  defp annotate_exec_result(exec_result, block_index, code, total_blocks) do
-    details = Map.get(exec_result, :details, %{}) || %{}
-
-    details =
-      details
-      |> Map.put_new("block_index", block_index)
-      |> Map.put_new("block_count", total_blocks)
-      |> Map.put_new("block_code", code)
-
-    if exec_result.status == :error do
-      %{
-        exec_result
-        | details:
-            Map.put(details, "failed_block_index", block_index)
-            |> Map.put("failed_block_code", code)
-      }
-    else
-      %{exec_result | details: details}
-    end
-  end
-
-  defp merge_exec_results(left, right) do
-    %{
-      stdout: left.stdout <> right.stdout,
-      stderr: left.stderr <> right.stderr,
-      has_final: left.has_final or right.has_final,
-      final_value: right.final_value || left.final_value,
-      status: merge_exec_status(left.status, right.status),
-      error_kind: right.error_kind || left.error_kind,
-      recovery_kind: right.recovery_kind || left.recovery_kind,
-      details: Map.merge(left.details || %{}, right.details || %{})
-    }
-  end
-
-  defp merge_exec_status(:error, _), do: :error
-  defp merge_exec_status(_, :error), do: :error
-  defp merge_exec_status(:recovered, _), do: :recovered
-  defp merge_exec_status(_, :recovered), do: :recovered
-  defp merge_exec_status(_, _), do: :ok
-
-  defp strip_fence_lines(text) do
-    text
-    |> String.replace(~r/^```[a-zA-Z0-9_-]*\s*\n?/, "")
-    |> String.replace(~r/\n?```\s*$/, "")
-  end
-
-  defp first_likely_fenced_block(text) do
-    case Regex.scan(~r/```([a-zA-Z0-9_-]*)\s*\n([\s\S]*?)```/, text, capture: :all_but_first) do
-      [] ->
-        text
-
-      blocks ->
-        Enum.find_value(blocks, text, fn [language, code] ->
-          cond do
-            language in ["python", "py", "repl"] -> code
-            looks_like_python?(String.trim(code)) -> code
-            true -> nil
-          end
-        end)
-    end
-  end
-
-  defp salvage_python_tail(text) do
-    lines = String.split(text, "\n")
-
-    case Enum.find_index(lines, &python_line?/1) do
-      nil -> text
-      index -> lines |> Enum.drop(index) |> Enum.join("\n")
-    end
-  end
-
-  defp looks_like_python?(text) do
-    trimmed = String.trim(text)
-
-    trimmed != "" and
-      (String.contains?(trimmed, [
-         "print(",
-         "FINAL(",
-         "FINAL_VAR(",
-         "llm_query(",
-         "async_llm_query("
-       ]) or
-         python_line?(trimmed))
-  end
-
-  defp python_line?(line) do
-    trimmed = String.trim_leading(line)
-
-    trimmed != "" and
-      not String.starts_with?(trimmed, ["```", "Here ", "I ", "Let me", "I'll", "We "]) and
-      Regex.match?(
-        ~r/^(#|import\s+|from\s+|print\(|FINAL\(|FINAL_VAR\(|[A-Za-z_][A-Za-z0-9_]*\s*=|for\s+|while\s+|if\s+|with\s+|try:|except\b|def\s+|class\s+|async\s+def\s+|await\s+|return\b|pass\b)/,
-        trimmed
-      )
   end
 
   defp finalize_result(prompt, answer, status, completed?, iterations, records, run_state) do
