@@ -27,6 +27,7 @@ defmodule Rlm.Engine.PolicyTest do
 
     assert metadata =~ "File-backed sources: 2"
     assert metadata =~ "Grounding hint: Base the final answer on retrieved evidence"
+    assert metadata =~ "Prefer verified claims and observed excerpts over path-heavy attribution"
     assert metadata =~ "Metadata budget: constant-size summary only"
     refute metadata =~ "/tmp/Week-09-2025.md"
     refute metadata =~ "First 20 files"
@@ -61,6 +62,8 @@ defmodule Rlm.Engine.PolicyTest do
     assert prompt =~ "use `grep_files()` with high-signal query terms"
     assert prompt =~ "`grep_open()` when you want immediate previews"
     assert prompt =~ "prefer `peek_hit(hit)` or `open_hit(hit)`"
+    assert prompt =~ "do not force every claim into a `(from /path/to/file)` label"
+    assert prompt =~ "If a concept is synthesized across multiple notes, say so"
     assert prompt =~ "Prefer `peek_file()` before `read_file()`"
 
     assert prompt =~
