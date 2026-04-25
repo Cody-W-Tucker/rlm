@@ -1,0 +1,42 @@
+```python
+# Scout the corpus structure first
+print("=== Sampling files to understand corpus shape ===")
+sample = sample_files(20)
+print(sample)
+print("\nTotal files: 262, Total bytes: 638326")
+```
+
+```python
+# Look for philosophy-related content and novel concepts
+print("=== Searching for philosophical concepts ===")
+hits = grep_open("novel|concept|insight|revelation|profound|groundbreaking", limit=6)
+print(hits)
+```
+
+```python
+# Also search for specific philosophical terms
+print("=== Searching for philosophical terminology ===")
+philo_hits = grep_open("phenomenology|existentialism|determinism|consciousness|ontology|epistemology|nihilism|absurdism", limit=6)
+print(philo_hits)
+```
+
+```python
+# Search for emotional/aesthetic philosophical responses
+print("=== Searching for emotional or aesthetic responses ===")
+moved_hits = grep_open("beautiful|sublime|awe|wonder|realization", limit=6)
+print(moved_hits)
+```
+
+```python
+# Files mentioning philosophy directly
+print("=== Files mentioning philosophy ===")
+philosophy_hits = grep_files("philosophy", limit=10)
+print([h.path for h in philosophy_hits])
+```
+
+```python
+# Later-block typo seen in the wild
+print("=== Contemporary/speculative philosophy terms ===")
+contemporary_hits = grep_files("simulation|hyperstition|accelerationism|speculative realism", limit=10)
+print(contemporary_haits)
+```

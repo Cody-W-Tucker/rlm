@@ -58,6 +58,8 @@ defmodule Rlm.Engine.Failure do
         stderr -> stderr
       end
 
+    message = append_block_context(message, exec_result)
+
     case exec_result.error_kind do
       :subquery_error ->
         classify_subquery(message)
@@ -76,6 +78,23 @@ defmodule Rlm.Engine.Failure do
 
       _ ->
         classify_runtime(message)
+    end
+  end
+
+  defp append_block_context(message, exec_result) do
+    details = Map.get(exec_result, :details, %{}) || %{}
+    failed_block_index = details["failed_block_index"] || details[:failed_block_index]
+    block_count = details["block_count"] || details[:block_count]
+    failed_block_code = details["failed_block_code"] || details[:failed_block_code]
+
+    cond do
+      is_integer(failed_block_index) and is_integer(block_count) and is_binary(failed_block_code) ->
+        message <>
+          "\n\nFailure occurred in block #{failed_block_index} of #{block_count}." <>
+          "\nFailing block code:\n#{failed_block_code}"
+
+      true ->
+        message
     end
   end
 

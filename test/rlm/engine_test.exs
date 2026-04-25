@@ -249,6 +249,73 @@ defmodule Rlm.TestFixtureProvider do
   end
 end
 
+defmodule Rlm.TestRecoveryFixtureProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(history, _system_prompt, _settings) do
+    text =
+      if Enum.any?(history, &String.contains?(&1.content, "Python suggested this likely fix")) do
+        Application.fetch_env!(:rlm, :test_fixture_recovery_response)
+      else
+        Application.fetch_env!(:rlm, :test_fixture_response)
+      end
+
+    {:ok, %{text: text, input_tokens: 0, output_tokens: 0}}
+  end
+
+  def complete_subquery(sub_context, instruction, settings) do
+    handler =
+      Application.get_env(:rlm, :test_fixture_subquery_handler, fn _sub_context,
+                                                                   _instruction,
+                                                                   _settings ->
+        {:ok, %{text: "fixture summary", input_tokens: 0, output_tokens: 0}}
+      end)
+
+    handler.(sub_context, instruction, settings)
+  end
+end
+
+defmodule Rlm.TestMultiBlockTypoRecoveryProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(history, _system_prompt, _settings) do
+    if Enum.any?(history, &String.contains?(&1.content, "Python suggested this likely fix")) do
+      {:ok,
+       %{
+         text: """
+         ```python
+         contemporary_hits = grep_files("belief", limit=2)
+         print(contemporary_hits)
+         FINAL("recovered after typo")
+         ```
+         """,
+         input_tokens: 0,
+         output_tokens: 0
+       }}
+    else
+      {:ok,
+       %{
+         text: """
+         ```python
+         print("first block ok")
+         contemporary_hits = grep_files("belief", limit=2)
+         ```
+
+         ```python
+         print(contemporary_haits)
+         ```
+         """,
+         input_tokens: 0,
+         output_tokens: 0
+       }}
+    end
+  end
+
+  def complete_subquery(_sub_context, _instruction, _settings) do
+    {:ok, %{text: "unused", input_tokens: 0, output_tokens: 0}}
+  end
+end
+
 defmodule Rlm.TestUnterminatedFinalProvider do
   @behaviour Rlm.Providers.Provider
 
@@ -452,8 +519,13 @@ defmodule Rlm.EngineTest do
 
     on_exit(fn ->
       Application.delete_env(:rlm, :test_fixture_response)
+      Application.delete_env(:rlm, :test_fixture_recovery_response)
       Application.delete_env(:rlm, :test_fixture_subquery_handler)
     end)
+  end
+
+  defp put_fixture_recovery_response(text) do
+    Application.put_env(:rlm, :test_fixture_recovery_response, text)
   end
 
   defp build_fixture_corpus(tmp) do
@@ -642,6 +714,68 @@ defmodule Rlm.EngineTest do
     stdout = hd(result.iteration_records).stdout
     assert stdout =~ "=== Reading key file ==="
     assert stdout =~ "=== Searching related concepts ==="
+  end
+
+  test "recovery feedback includes failing block and python suggestion for later-block typos" do
+    tmp = TestHelpers.temp_dir("rlm-engine-typo-recovery")
+    on_exit(fn -> File.rm_rf!(tmp) end)
+    build_fixture_corpus(tmp)
+
+    settings = TestHelpers.settings(%{max_iterations: 3})
+    assert {:ok, bundle} = Rlm.Context.Loader.load({:path, tmp}, settings)
+
+    assert {:ok, result} =
+             Engine.run("summarize", bundle, settings, Rlm.TestMultiBlockTypoRecoveryProvider)
+
+    assert result.completed?
+    assert result.answer == "recovered after typo"
+    assert length(result.failure_history) == 1
+
+    failure = hd(result.failure_history)
+    assert failure.class == :python_exec_error
+    assert failure.message =~ "Failure occurred in block 2 of 2"
+    assert failure.message =~ "print(contemporary_haits)"
+
+    recovery_prompt = Enum.at(result.iteration_records, 0)
+    assert recovery_prompt.stderr =~ "Did you mean: 'contemporary_hits'?"
+  end
+
+  test "fixture regression covers typo-driven multiblock runtime failure from the wild" do
+    tmp = TestHelpers.temp_dir("rlm-engine-typo-fixture")
+    on_exit(fn -> File.rm_rf!(tmp) end)
+    build_fixture_corpus(tmp)
+
+    put_fixture_response(
+      fixture_response("typo_multiblock_runtime_error.txt", [{"__ROOT__", tmp}])
+    )
+
+    put_fixture_recovery_response("""
+    ```python
+    print("=== Recovery pass ===")
+    contemporary_hits = grep_files("simulation|hyperstition|accelerationism|speculative realism", limit=10)
+    print(contemporary_hits)
+    FINAL("recovered from fixture typo")
+    ```
+    """)
+
+    settings = TestHelpers.settings(%{max_iterations: 3})
+    assert {:ok, bundle} = Rlm.Context.Loader.load({:path, tmp}, settings)
+
+    assert {:ok, result} =
+             Engine.run("summarize", bundle, settings, Rlm.TestRecoveryFixtureProvider)
+
+    assert result.completed?
+    assert result.answer == "recovered from fixture typo"
+    assert length(result.failure_history) == 1
+
+    failure = hd(result.failure_history)
+    assert failure.message =~ "Failure occurred in block 6 of 6"
+    assert failure.message =~ "print(contemporary_haits)"
+    assert failure.message =~ "Did you mean: 'contemporary_hits'?"
+
+    first_record = hd(result.iteration_records)
+    assert first_record.stdout =~ "=== Sampling files to understand corpus shape ==="
+    assert first_record.stdout =~ "=== Searching for philosophical concepts ==="
   end
 
   test "uses successful silent sub-query text as the best partial answer" do
