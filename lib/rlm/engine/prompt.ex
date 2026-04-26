@@ -15,7 +15,7 @@ defmodule Rlm.Engine.Prompt do
     Base.system_prompt(settings, iteration, run_state, strategy_constraints)
   end
 
-  def iteration_feedback(exec_result, settings, iteration, run_state) do
-    IterationFeedback.build(exec_result, settings, iteration, run_state)
+  def iteration_feedback(exec_result, settings, iteration, run_state, context_bundle) do
+    IterationFeedback.build(exec_result, settings, iteration, run_state, context_bundle)
   end
 end

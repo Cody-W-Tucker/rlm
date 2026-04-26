@@ -20,7 +20,7 @@ defmodule Rlm.Engine.Failure do
           :provider -> classify_provider(message)
           :subquery -> classify_subquery(message)
           :response_format -> build(:provider_response_error, :response_format, message, true)
-          :grounding -> build(:ungrounded_final_answer, :grounding, message, true)
+          :grounding -> classify_grounding(message)
           :runtime -> classify_runtime(message)
         end
     end
@@ -150,6 +150,16 @@ defmodule Rlm.Engine.Failure do
     end
   end
 
+  defp classify_grounding(message) do
+    cond do
+      String.contains?(message, "Grounding grade") ->
+        build(:insufficient_grounding, :grounding, message, true)
+
+      true ->
+        build(:ungrounded_final_answer, :grounding, message, true)
+    end
+  end
+
   defp format_runtime_exec_message(exec_result) do
     detail_message =
       get_in(exec_result, [:details, "message"]) || get_in(exec_result, [:details, :message])
@@ -210,6 +220,10 @@ defmodule Rlm.Engine.Failure do
   defp advice_for(:ungrounded_final_answer),
     do:
       "the final answer cited unsupported evidence from the corpus. Inspect the missing files or remove unsupported claims before finalizing."
+
+  defp advice_for(:insufficient_grounding),
+    do:
+      "the final answer relied on scouting evidence that was too weak for a multi-file corpus. Read the strongest candidate files directly before finalizing."
 
   defp advice_for(:subquery_budget_exhausted),
     do: "the run exhausted its sub-query budget. Finalize from the best answer collected so far."

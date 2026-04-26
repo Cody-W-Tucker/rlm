@@ -4,7 +4,11 @@ I will do a smaller recovery-mode style pass.
 ROOT = "__ROOT__"
 print("=== Reading key file ===")
 aimlessness = read_file(f"{ROOT}/Aimlessness.md", limit=40)
+belief = read_file(f"{ROOT}/Belief.md", limit=40)
+sexual = read_file(f"{ROOT}/Sexuality/Sexual Urges Are Elusive to Introspection.md", limit=40)
 print(aimlessness[:200])
+print(belief[:200])
+print(sexual[:200])
 ```
 
 I also want a quick content search before finalizing.

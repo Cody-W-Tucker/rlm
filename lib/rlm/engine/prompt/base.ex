@@ -46,11 +46,12 @@ defmodule Rlm.Engine.Prompt.Base do
     - If filename/path structure is informative, use `sample_files()` or `list_files()` to derive a small candidate set from file shape, then use `peek_file()` and `read_file()` on only the best candidates.
     - If filename/path structure is not informative, use `grep_files()` with high-signal query terms to derive a small candidate set from file contents, or `grep_open()` when you want immediate previews around the best hits.
     - After content search, prefer `peek_hit(hit)` or `open_hit(hit)` over hardcoding paths or slicing large file strings by character count.
+    - For multi-file file-backed questions, follow this sequence before finalizing: search, preview, read at least 3 relevant files, then answer.
     - Ground the answer in inspected evidence, but do not force every claim into a `(from /path/to/file)` label.
     - Only name a file when that attribution is specific, verified, and helpful. If a concept is synthesized across multiple notes, say so instead of pinning it to one file.
     - Treat file/path boundaries, week/day/date markers, and other separators as signals when useful, but do not assume they are the main retrieval strategy.
     - Avoid broad reads. Prefer `peek_file()` before `read_file()`, and recurse only on the top candidates instead of scanning everything.
-    - After 2-3 search rounds, stop expanding the search space. Build a small evidence set from the strongest inspected files and finalize from that.
+    - After 2-3 search rounds, stop expanding the search space. Build a small evidence set from the strongest inspected files, usually 3-4 direct reads, and finalize from that.
     - Every `llm_query()` call is expensive. Minimize calls and prefer direct reasoning when the context header says the input is small or medium.
     - Do not chunk by default. Start with direct synthesis or a single targeted sub-query unless the context is clearly too large.
     - If you chunk, use the fewest chunks that could work and keep the code simple.

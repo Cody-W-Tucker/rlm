@@ -27,6 +27,7 @@ defmodule Rlm.Storage.RunStore do
       output_tokens: result[:output_tokens],
       depth: result.depth,
       best_answer_reason: result[:best_answer_reason],
+      grounding: result[:grounding],
       recovery_flags: result[:recovery_flags],
       failure_history: result[:failure_history],
       last_successful_subquery: result[:last_successful_subquery],

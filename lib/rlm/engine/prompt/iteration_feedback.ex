@@ -1,9 +1,10 @@
 defmodule Rlm.Engine.Prompt.IterationFeedback do
   @moduledoc false
 
+  alias Rlm.Engine.Grounding.Grade
   alias Rlm.Engine.Grounding.Policy, as: GroundingPolicy
 
-  def build(exec_result, settings, iteration, run_state) do
+  def build(exec_result, settings, iteration, run_state, context_bundle) do
     parts = []
 
     parts =
@@ -48,11 +49,13 @@ defmodule Rlm.Engine.Prompt.IterationFeedback do
       end
 
     consolidation_note = consolidation_note(exec_result)
+    grounding_note = grounding_note(exec_result, context_bundle)
 
     (parts ++
        [
          "Iteration #{iteration}/#{settings.max_iterations}. Sub-queries used: #{run_state.total_sub_queries}/#{settings.max_sub_queries}.",
          best_answer_note,
+         grounding_note,
          consolidation_note,
          subquery_candidate_note,
          "Continue processing or call FINAL() when you have the answer."
@@ -77,6 +80,25 @@ defmodule Rlm.Engine.Prompt.IterationFeedback do
       "You have already done multiple search rounds. Stop expanding search, choose the strongest inspected evidence, and finalize from that small working set."
     else
       nil
+    end
+  end
+
+  defp grounding_note(exec_result, context_bundle) do
+    case Grade.assess(context_bundle, [%{details: exec_result.details || %{}}]) do
+      %{grade: grade, level: :scout_only} ->
+        "Current grounding grade: #{grade} (scout-only). The previews and grep hits are useful for high-value introspection, but promote the strongest candidates to `read_file()` and read at least 3 relevant files before finalizing an evidence-heavy answer."
+
+      %{grade: grade, level: :search_only} ->
+        "Current grounding grade: #{grade} (search-only). Search narrowed the corpus, but inspect concrete file windows with `peek_hit()`, `open_hit()`, or `peek_file()`, then read at least 3 relevant files before finalizing."
+
+      %{grade: grade, level: :read_backed, metrics: %{read_files: read_files}} ->
+        "Current grounding grade: #{grade} (limited read-backed). You have only read #{read_files} file(s). For a multi-file corpus, keep the working set small, but read at least 3 relevant files before finalizing."
+
+      %{grade: grade, label: label, summary: summary} ->
+        "Current grounding grade: #{grade} (#{label}). #{summary}"
+
+      nil ->
+        nil
     end
   end
 end

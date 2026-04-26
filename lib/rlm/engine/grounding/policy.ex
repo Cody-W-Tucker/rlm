@@ -1,6 +1,10 @@
 defmodule Rlm.Engine.Grounding.Policy do
   @moduledoc false
 
+  alias Rlm.Engine.Grounding.Grade
+
+  @minimum_multi_file_reads 3
+
   def hint(context_bundle) do
     lazy_file_count = length(Map.get(context_bundle, :lazy_entries, []))
 
@@ -13,24 +17,11 @@ defmodule Rlm.Engine.Grounding.Policy do
     end
   end
 
-  def validate_final_answer(context_bundle, final_answer, details) do
+  def validate_final_answer(context_bundle, final_answer, details, iteration_records \\ []) do
     if file_backed?(context_bundle) do
-      cited_paths = cited_paths(final_answer)
-
-      if cited_paths == [] do
+      with :ok <- validate_cited_paths(final_answer, details),
+           :ok <- validate_grounding_grade(context_bundle, iteration_records) do
         :ok
-      else
-        evidence = evidence(details)
-        inspected_paths = MapSet.new(evidence.previewed_files ++ evidence.read_files)
-
-        missing_paths = Enum.reject(cited_paths, &MapSet.member?(inspected_paths, &1))
-
-        if missing_paths == [] do
-          :ok
-        else
-          {:error,
-           "Final answer cited file paths without inspecting them in this run: #{Enum.join(missing_paths, ", ")}. Read or preview those files before finalizing, or remove the unsupported citations."}
-        end
       end
     else
       :ok
@@ -38,6 +29,9 @@ defmodule Rlm.Engine.Grounding.Policy do
   end
 
   def file_backed?(context_bundle), do: length(Map.get(context_bundle, :lazy_entries, [])) > 0
+
+  def multi_file_backed?(context_bundle),
+    do: length(Map.get(context_bundle, :lazy_entries, [])) > 1
 
   def evidence(details) do
     evidence = details["evidence"] || details[:evidence] || %{}
@@ -58,4 +52,40 @@ defmodule Rlm.Engine.Grounding.Policy do
   end
 
   def cited_paths(_), do: []
+
+  defp validate_cited_paths(final_answer, details) do
+    cited_paths = cited_paths(final_answer)
+
+    if cited_paths == [] do
+      :ok
+    else
+      evidence = evidence(details)
+      inspected_paths = MapSet.new(evidence.previewed_files ++ evidence.read_files)
+
+      missing_paths = Enum.reject(cited_paths, &MapSet.member?(inspected_paths, &1))
+
+      if missing_paths == [] do
+        :ok
+      else
+        {:error,
+         "Final answer cited file paths without inspecting them in this run: #{Enum.join(missing_paths, ", ")}. Read or preview those files before finalizing, or remove the unsupported citations."}
+      end
+    end
+  end
+
+  defp validate_grounding_grade(context_bundle, iteration_records) do
+    if multi_file_backed?(context_bundle) do
+      case Grade.assess(context_bundle, iteration_records) do
+        %{grade: grade, metrics: %{read_files: read_files, search_count: search_count}}
+        when read_files < @minimum_multi_file_reads and search_count >= 1 ->
+          {:error,
+           "Grounding grade #{grade} is too weak for a multi-file file-backed final answer. Search, preview, then promote at least #{@minimum_multi_file_reads} relevant files to `read_file()` before finalizing from that smaller inspected set."}
+
+        _ ->
+          :ok
+      end
+    else
+      :ok
+    end
+  end
 end

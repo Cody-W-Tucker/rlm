@@ -3,6 +3,7 @@ defmodule Rlm.Engine do
 
   alias Rlm.Engine.Failure
   alias Rlm.Engine.Execution.BlockRunner
+  alias Rlm.Engine.Grounding.Grade, as: GroundingGrade
   alias Rlm.Engine.Grounding.Policy, as: GroundingPolicy
   alias Rlm.Engine.Policy
   alias Rlm.Engine.Recovery
@@ -22,7 +23,8 @@ defmodule Rlm.Engine do
           run_with_repl(prompt, context_bundle, settings, provider_module, repl, run_state, opts)
 
         {:error, reason} ->
-          {:ok, error_result(prompt, Failure.from_stage(:startup, reason), run_state)}
+          {:ok,
+           error_result(prompt, context_bundle, Failure.from_stage(:startup, reason), run_state)}
       end
 
     RunState.stop(run_state)
@@ -44,7 +46,8 @@ defmodule Rlm.Engine do
         iterate(prompt, context_bundle, settings, provider_module, repl, run_state, opts)
       else
         {:error, reason} ->
-          {:ok, error_result(prompt, Failure.from_stage(:startup, reason), run_state)}
+          {:ok,
+           error_result(prompt, context_bundle, Failure.from_stage(:startup, reason), run_state)}
       end
     after
       PythonRepl.stop(repl)
@@ -72,7 +75,7 @@ defmodule Rlm.Engine do
 
   defp execute_iterations(
          prompt,
-         _context_bundle,
+         context_bundle,
          settings,
          _provider_module,
          _repl,
@@ -86,6 +89,7 @@ defmodule Rlm.Engine do
     {:ok,
      finalize_incomplete_result(
        prompt,
+       context_bundle,
        :max_iterations,
        settings.max_iterations,
        records,
@@ -187,13 +191,14 @@ defmodule Rlm.Engine do
 
             next_records = records ++ [record]
 
-            case classify_exec_result(context_bundle, exec_result) do
+            case classify_exec_result(context_bundle, exec_result, next_records) do
               {:finalized, final_answer} ->
                 RunState.remember_best_answer(run_state, final_answer, :final_value)
 
                 {:ok,
                  finalize_result(
                    prompt,
+                   context_bundle,
                    final_answer,
                    :completed,
                    true,
@@ -248,7 +253,8 @@ defmodule Rlm.Engine do
                             exec_result,
                             settings,
                             iteration,
-                            RunState.snapshot(run_state)
+                            RunState.snapshot(run_state),
+                            context_bundle
                           )
                       }
                     ]
@@ -336,11 +342,11 @@ defmodule Rlm.Engine do
         iteration + 1
       )
     else
-      {:ok, error_result(prompt, failure, run_state, iteration, records)}
+      {:ok, error_result(prompt, context_bundle, failure, run_state, iteration, records)}
     end
   end
 
-  defp classify_exec_result(context_bundle, exec_result) do
+  defp classify_exec_result(context_bundle, exec_result, iteration_records) do
     cond do
       exec_result.has_final and is_binary(exec_result.final_value) and
           String.trim(exec_result.final_value) != "" ->
@@ -349,7 +355,8 @@ defmodule Rlm.Engine do
         case GroundingPolicy.validate_final_answer(
                context_bundle,
                final_answer,
-               exec_result.details || %{}
+               exec_result.details || %{},
+               iteration_records
              ) do
           :ok -> {:finalized, final_answer}
           {:error, reason} -> {:recoverable_failure, Failure.from_stage(:grounding, reason)}
@@ -379,8 +386,18 @@ defmodule Rlm.Engine do
     end
   end
 
-  defp finalize_result(prompt, answer, status, completed?, iterations, records, run_state) do
+  defp finalize_result(
+         prompt,
+         context_bundle,
+         answer,
+         status,
+         completed?,
+         iterations,
+         records,
+         run_state
+       ) do
     snapshot = RunState.snapshot(run_state)
+    grounding = GroundingGrade.assess(context_bundle, records)
 
     %{
       prompt: prompt,
@@ -397,11 +414,12 @@ defmodule Rlm.Engine do
       failure_history: snapshot.failure_history,
       last_successful_subquery: snapshot.last_successful_subquery,
       last_successful_subquery_result: snapshot.last_successful_subquery_result,
+      grounding: grounding,
       iteration_records: records
     }
   end
 
-  defp finalize_incomplete_result(prompt, status, iterations, records, run_state) do
+  defp finalize_incomplete_result(prompt, context_bundle, status, iterations, records, run_state) do
     snapshot = RunState.snapshot(run_state)
 
     answer =
@@ -414,14 +432,15 @@ defmodule Rlm.Engine do
             "\n\nNote: this is the best partial answer available because the run reached its iteration limit."
       end
 
-    finalize_result(prompt, answer, status, false, iterations, records, run_state)
+    finalize_result(prompt, context_bundle, answer, status, false, iterations, records, run_state)
   end
 
-  defp error_result(prompt, failure, run_state, iterations \\ 0, records \\ []) do
+  defp error_result(prompt, context_bundle, failure, run_state, iterations \\ 0, records \\ []) do
     answer = render_failure_answer(RunState.snapshot(run_state).best_answer_so_far, failure)
 
     finalize_result(
       prompt,
+      context_bundle,
       answer,
       Failure.status(failure),
       false,

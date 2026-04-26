@@ -24,7 +24,7 @@ defmodule Rlm.Engine.Prompt.ContextStrategy do
           "Inline text is available in `context`. For file-backed sources, use `list_files()` or `sample_files()` to inspect file shape, `peek_file(path)` for light inspection, `read_file(path)` for deeper reads, `grep_files(pattern)` for reusable hits, and `grep_open(pattern)` for search-plus-preview."
 
         lazy_file_count > 0 ->
-          "Context is file-backed. Use `list_files()` or `sample_files()` to inspect file shape, `peek_file(path)` for light inspection, `read_file(path)` for deeper reads, `grep_files(pattern)` for reusable hits, and `grep_open(pattern)` for search-plus-preview instead of assuming `context` contains the corpus."
+          "Context is file-backed. Use `list_files()` or `sample_files()` to inspect file shape, `peek_file(path)` for light inspection, `read_file(path)` for deeper reads, `grep_files(pattern)` for reusable hits, and `grep_open(pattern)` for search-plus-preview instead of assuming `context` contains the corpus. For multi-file questions, search first, preview the best matches, then read at least 3 relevant files before final synthesis."
 
         true ->
           "Context is preloaded in `context`."

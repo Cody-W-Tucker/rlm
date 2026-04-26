@@ -9,6 +9,6 @@ defmodule Rlm.Engine.Policy do
   def system_prompt(settings, iteration, run_state),
     do: Prompt.system_prompt(settings, iteration, run_state)
 
-  def iteration_feedback(exec_result, settings, iteration, run_state),
-    do: Prompt.iteration_feedback(exec_result, settings, iteration, run_state)
+  def iteration_feedback(exec_result, settings, iteration, run_state, context_bundle),
+    do: Prompt.iteration_feedback(exec_result, settings, iteration, run_state, context_bundle)
 end

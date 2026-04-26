@@ -65,6 +65,8 @@ defmodule Rlm.Engine.PolicyTest do
     assert prompt =~ "do not force every claim into a `(from /path/to/file)` label"
     assert prompt =~ "If a concept is synthesized across multiple notes, say so"
     assert prompt =~ "Prefer `peek_file()` before `read_file()`"
+    assert prompt =~ "search, preview, read at least 3 relevant files, then answer"
+    assert prompt =~ "usually 3-4 direct reads"
 
     assert prompt =~
              "prefer parallel sub-queries with `asyncio.gather(async_llm_query(...), ...)`"

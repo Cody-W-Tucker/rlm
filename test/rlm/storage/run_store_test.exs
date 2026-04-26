@@ -18,6 +18,7 @@ defmodule Rlm.Storage.RunStoreTest do
       iterations: 2,
       total_sub_queries: 1,
       depth: 0,
+      grounding: %{grade: "B", label: "targeted read-backed"},
       iteration_records: [%{iteration: 1, events: [], actions: []}]
     }
 
@@ -30,5 +31,6 @@ defmodule Rlm.Storage.RunStoreTest do
     assert saved["prompt"] == "What happened?"
     assert saved["mode"] == "one_shot"
     assert saved["context_sources"] == ["inline text"]
+    assert saved["grounding"]["grade"] == "B"
   end
 end

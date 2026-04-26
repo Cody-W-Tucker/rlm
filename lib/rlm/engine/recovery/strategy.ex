@@ -31,6 +31,10 @@ defmodule Rlm.Engine.Recovery.Strategy do
     "Do not keep expanding the search. Inspect the specific missing files you cited or remove those unsupported claims, then finalize from the verified evidence set."
   end
 
+  def recovery_instruction(%Failure{class: :insufficient_grounding}) do
+    "Do not finalize from scouting alone or from a single read. Keep the introspection from `peek_file()` and `grep_open()`, then promote the strongest candidates to `read_file()` until you have at least 3 relevant reads before finalizing."
+  end
+
   def recovery_instruction(_failure) do
     "Use a simpler strategy than the previous iteration and avoid repeating the same failure pattern."
   end

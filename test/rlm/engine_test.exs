@@ -282,13 +282,8 @@ defmodule Rlm.TestMultiBlockTypoRecoveryProvider do
     if Enum.any?(history, &String.contains?(&1.content, "Python suggested this likely fix")) do
       {:ok,
        %{
-         text: """
-         ```python
-         contemporary_hits = grep_files("belief", limit=2)
-         print(contemporary_hits)
-         FINAL("recovered after typo")
-         ```
-         """,
+         text:
+           "```python\ncontemporary_hits = grep_files(\"Belief|belief|meaning|introspection|identity\", limit=5)\ntargets = []\nfor hit in contemporary_hits:\n    if hit.path not in targets:\n        targets.append(hit.path)\n    if len(targets) == 3:\n        break\nfor target in targets:\n    print(read_file(target, limit=5))\nprint(contemporary_hits)\nFINAL(\"recovered after typo\")\n```",
          input_tokens: 0,
          output_tokens: 0
        }}
@@ -511,10 +506,10 @@ defmodule Rlm.TestEvidenceTrackingProvider do
        files = sample_files(3)
        preview = peek_file(files[0], limit=2)
        hits = grep_open("identity|meaning", limit=2, window=1)
-       content = read_file(files[1], limit=2)
+       contents = [read_file(path, limit=2) for path in files]
        print(preview)
        print(hits)
-       FINAL(content)
+       FINAL(contents[-1])
        ```
        """,
        input_tokens: 0,
@@ -556,6 +551,39 @@ defmodule Rlm.TestUngroundedCitationRecoveryProvider do
          target = [path for path in list_files() if path.endswith("Belief.md")][0]
          print(read_file(target, limit=5))
          FINAL("Unsupported citation from `/tmp/placeholder/Aimlessness.md`")
+         ```
+         """,
+         input_tokens: 0,
+         output_tokens: 0
+       }}
+    end
+  end
+
+  def complete_subquery(_sub_context, _instruction, _settings) do
+    {:ok, %{text: "unused", input_tokens: 0, output_tokens: 0}}
+  end
+end
+
+defmodule Rlm.TestInsufficientGroundingRecoveryProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(history, _system_prompt, _settings) do
+    if Enum.any?(history, &String.contains?(&1.content, "insufficient_grounding")) do
+      {:ok,
+       %{
+         text:
+           "```python\ntargets = [\n    path\n    for path in list_files()\n    if path.endswith(\"Aimlessness.md\") or path.endswith(\"Belief.md\") or path.endswith(\"Sexual Urges Are Elusive to Introspection.md\")\n]\ncontents = [read_file(path, limit=5) for path in targets]\nfor content in contents:\n    print(content)\nFINAL(\"Recovered with 3-file read-backed grounding\")\n```",
+         input_tokens: 0,
+         output_tokens: 0
+       }}
+    else
+      {:ok,
+       %{
+         text: """
+         ```python
+         hits = grep_open("identity|meaning", limit=2, window=1)
+         print(hits)
+         FINAL("Scout-only synthesis that should be blocked")
          ```
          """,
          input_tokens: 0,
@@ -821,7 +849,15 @@ defmodule Rlm.EngineTest do
     put_fixture_recovery_response("""
     ```python
     print("=== Recovery pass ===")
-    contemporary_hits = grep_files("simulation|hyperstition|accelerationism|speculative realism", limit=10)
+    contemporary_hits = grep_files("identity|meaning|Belief|belief|introspection", limit=10)
+    targets = []
+    for hit in contemporary_hits:
+        if hit.path not in targets:
+            targets.append(hit.path)
+        if len(targets) == 3:
+            break
+    for target in targets:
+        print(read_file(target, limit=5))
     print(contemporary_hits)
     FINAL("recovered from fixture typo")
     ```
@@ -889,11 +925,13 @@ defmodule Rlm.EngineTest do
              Engine.run("summarize", bundle, settings, Rlm.TestEvidenceTrackingProvider)
 
     assert result.completed?
+    assert result.grounding.grade == "A"
+    assert result.grounding.level == :read_backed_multi
 
     evidence = get_in(hd(result.iteration_records), [:details, "evidence"])
     assert evidence["search_count"] >= 1
     assert length(evidence["previewed_files"]) >= 1
-    assert length(evidence["read_files"]) >= 1
+    assert length(evidence["read_files"]) >= 3
     assert length(evidence["hit_paths"]) >= 1
   end
 
@@ -917,6 +955,33 @@ defmodule Rlm.EngineTest do
     assert failure.class == :ungrounded_final_answer
     assert failure.message =~ "without inspecting them in this run"
     assert failure.message =~ "Aimlessness.md"
+  end
+
+  test "blocks scout-only finalization on multi-file file-backed runs" do
+    tmp = TestHelpers.temp_dir("rlm-engine-grounding-grade")
+    on_exit(fn -> File.rm_rf!(tmp) end)
+
+    build_fixture_corpus(tmp)
+    settings = TestHelpers.settings(%{max_iterations: 3})
+
+    assert {:ok, bundle} = Rlm.Context.Loader.load({:path, tmp}, settings)
+
+    assert {:ok, result} =
+             Engine.run(
+               "summarize",
+               bundle,
+               settings,
+               Rlm.TestInsufficientGroundingRecoveryProvider
+             )
+
+    assert result.completed?
+    assert result.answer =~ "Recovered with 3-file read-backed grounding"
+    assert result.grounding.grade == "A"
+    assert length(result.failure_history) == 1
+
+    failure = hd(result.failure_history)
+    assert failure.class == :insufficient_grounding
+    assert failure.message =~ "at least 3 relevant files"
   end
 
   test "grep_files returns reusable hit objects" do
@@ -954,6 +1019,8 @@ defmodule Rlm.EngineTest do
              Engine.run("find beta", bundle, settings, Rlm.TestGrepOpenProvider)
 
     assert result.completed?
+    assert result.grounding.grade == "C"
+    assert result.grounding.level == :scout_only
     assert result.answer =~ "1: alpha"
     assert result.answer =~ "2: beta"
     assert result.answer =~ "3: gamma"
