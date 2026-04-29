@@ -1,5 +1,3 @@
-# rlm
-
 Most RLMs show what recursion can do.
 
 We show what recursion looks like when it is engineered to be grounded, inspectable, and sustainable.
