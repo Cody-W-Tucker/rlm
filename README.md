@@ -112,8 +112,8 @@ Home Manager can then import the module:
 ## Run Examples
 
 ```bash
-mix rlm --file README.md "Summarize this file"
-mix rlm --file lib/**/*.ex "Explain the runtime flow"
-mix rlm --url https://example.com/data.txt "Extract the main idea"
-printf 'alpha\nbeta\n' | mix rlm --stdin "What is in stdin?"
+rlm --file README.md "Summarize this file"
+rlm --file lib/**/*.ex "Explain the runtime flow"
+rlm --url https://example.com/data.txt "Extract the main idea"
+printf 'alpha\nbeta\n' | rlm --stdin "What is in stdin?"
 ```
