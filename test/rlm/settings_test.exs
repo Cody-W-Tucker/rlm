@@ -48,7 +48,7 @@ defmodule Rlm.SettingsTest do
   test "fails fast when openai credentials are missing" do
     Application.put_env(:rlm, Settings,
       provider: :openai,
-      model: "gpt-4o-mini",
+      model: "gpt-5.4-mini",
       sub_model: nil,
       api_key: "",
       openai_base_url: "https://api.openai.com/v1",

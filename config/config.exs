@@ -2,7 +2,7 @@ import Config
 
 config :rlm, Rlm.Settings,
   provider: :openai,
-  model: "gpt-4o-mini",
+  model: "gpt-5.4-mini",
   sub_model: nil,
   api_key: "",
   openai_base_url: "https://api.openai.com/v1",
