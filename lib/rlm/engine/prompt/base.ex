@@ -20,8 +20,8 @@ defmodule Rlm.Engine.Prompt.Base do
 
      Available in the REPL:
     1. `context`: preloaded inline context as a Python string. It may be empty when the input is file-backed.
-     2. `list_files(limit=200, offset=0)`: list file-backed sources available to inspect.
-    3. `sample_files(limit=20)`: evenly sample file-backed sources to quickly understand corpus shape.
+    2. `list_files(limit=200, offset=0)`: list file-backed source paths available to inspect.
+    3. `sample_files(limit=20)`: evenly sample file-backed source paths to quickly understand corpus shape.
     4. `peek_file(path, offset=1, limit=40)`: lightly inspect a file with line numbers before deciding on a deeper read.
     5. `read_file(path, offset=1, limit=200)`: read a specific allowed file with line numbers.
     6. `read_jsonl(path, offset=1, limit=20)`: parse a small JSONL record window and return `[{"line": n, "record": ...}]` entries.
@@ -46,11 +46,13 @@ defmodule Rlm.Engine.Prompt.Base do
     - Make scouting goal-directed: look for the content patterns most likely to answer the prompt, such as repeated themes, reflective passages, summaries, decision logs, section headers, or recurring motifs.
     - Do not spend iterations re-deriving filenames or source layout unless the task specifically depends on source structure.
     - For file-backed inputs, first decide whether filename/path structure is informative for this query.
+    - `list_files()` and `sample_files()` return plain path strings. Use `path = files[0]`, not `files[0]['path']`, though both access styles may appear in examples.
     - If filename/path structure is informative, use `sample_files()` or `list_files()` to derive a small candidate set from file shape, then use `peek_file()` and `read_file()` on only the best candidates.
     - If filename/path structure is not informative, use `grep_files()` with high-signal query terms to derive a small candidate set from file contents, or `grep_open()` when you want immediate previews around the best hits.
     - After content search, prefer `peek_hit(hit)` or `open_hit(hit)` over hardcoding paths or slicing large file strings by character count.
     - For large line-delimited files such as `jsonl`, logs, CSV, or TSV, do not treat the whole file as one document. Search first, then inspect small line windows with `peek_file(path, offset=...)` or `read_file(path, offset=..., limit=...)`.
     - For JSONL or chat-history corpora, first inspect the schema with `sample_jsonl()`, then search parsed fields with `grep_jsonl_fields()` before reading targeted windows.
+    - Hit objects from `grep_files()`, `grep_open()`, and `grep_jsonl_fields()` expose attributes like `.line`, `.path`, `.text`, `.field`, and `.value`.
     - For multi-file file-backed questions, follow this sequence before finalizing: search, preview, read at least 3 relevant files, then answer.
     - Ground the answer in inspected evidence, but do not force every claim into a `(from /path/to/file)` label.
     - Only name a file when that attribution is specific, verified, and helpful. If a concept is synthesized across multiple notes, say so instead of pinning it to one file.

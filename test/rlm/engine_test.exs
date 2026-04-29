@@ -540,6 +540,35 @@ defmodule Rlm.TestJsonlRetrievalProvider do
   end
 end
 
+defmodule Rlm.TestJsonlCompatibilityProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(_history, _system_prompt, _settings) do
+    {:ok,
+     %{
+       text: """
+       ```python
+       files = list_files()
+       path = files[0]['path']
+       hits = grep_jsonl_fields(path, r"messages\[[0-9]+\]\.content", r"async|await", limit=2)
+       first = hits[0]
+       print(path)
+       print(first['line'])
+       print(first['field'])
+       print(first['value'])
+       FINAL(str(first['line']))
+       ```
+       """,
+       input_tokens: 0,
+       output_tokens: 0
+     }}
+  end
+
+  def complete_subquery(_sub_context, _instruction, _settings) do
+    {:ok, %{text: "unused", input_tokens: 0, output_tokens: 0}}
+  end
+end
+
 defmodule Rlm.TestEvidenceTrackingProvider do
   @behaviour Rlm.Providers.Provider
 
@@ -1166,6 +1195,35 @@ defmodule Rlm.EngineTest do
     assert stdout =~ "'record'"
     assert stdout =~ "messages[0].content"
     assert stdout =~ "Semaphore"
+  end
+
+  test "jsonl helpers tolerate dict-style access patterns used by the model" do
+    tmp = TestHelpers.temp_dir("rlm-engine-jsonl-compat")
+    on_exit(fn -> File.rm_rf!(tmp) end)
+
+    lines =
+      [
+        %{"messages" => [%{"role" => "user", "content" => "plain request"}], "source" => "cursor"},
+        %{"messages" => [%{"role" => "user", "content" => "I prefer async def with await"}], "source" => "cursor"}
+      ]
+      |> Enum.map_join("\n", &Jason.encode!/1)
+      |> Kernel.<>("\n")
+
+    File.write!(Path.join(tmp, "history.jsonl"), lines)
+    settings = TestHelpers.settings(%{max_iterations: 1})
+
+    assert {:ok, bundle} = Rlm.Context.Loader.load({:path, Path.join(tmp, "history.jsonl")}, settings)
+
+    assert {:ok, result} =
+             Engine.run("compat access", bundle, settings, Rlm.TestJsonlCompatibilityProvider)
+
+    assert result.completed?
+    assert result.answer == "2"
+
+    stdout = hd(result.iteration_records).stdout
+    assert stdout =~ "history.jsonl"
+    assert stdout =~ "messages[0].content"
+    assert stdout =~ "async def with await"
   end
 
   test "iteration feedback steers silent sub-query results toward finalization" do

@@ -71,6 +71,11 @@ class Hit:
     def __repr__(self):
         return str(self)
 
+    def __getitem__(self, key):
+        if key in {"path", "line", "text"}:
+            return getattr(self, key)
+        raise KeyError(key)
+
 
 class OpenedHit(Hit):
     def __init__(self, path, line, text, preview):
@@ -82,6 +87,11 @@ class OpenedHit(Hit):
 
     def __repr__(self):
         return str(self)
+
+    def __getitem__(self, key):
+        if key == "preview":
+            return self.preview
+        return super().__getitem__(key)
 
 
 class JsonlFieldHit:
@@ -96,6 +106,18 @@ class JsonlFieldHit:
 
     def __repr__(self):
         return str(self)
+
+    def __getitem__(self, key):
+        if key in {"path", "line", "field", "value"}:
+            return getattr(self, key)
+        raise KeyError(key)
+
+
+class PathRef(str):
+    def __getitem__(self, key):
+        if key == "path":
+            return str(self)
+        return super().__getitem__(key)
 
 
 def FINAL(value):
@@ -180,7 +202,7 @@ def async_llm_query(sub_context, instruction=""):
 def list_files(limit=200, offset=0):
     safe_limit = max(0, min(int(limit), 1000))
     safe_offset = max(0, int(offset))
-    return _file_sources[safe_offset : safe_offset + safe_limit]
+    return [PathRef(path) for path in _file_sources[safe_offset : safe_offset + safe_limit]]
 
 
 def sample_files(limit=20):
@@ -190,10 +212,10 @@ def sample_files(limit=20):
         return []
 
     if safe_limit >= len(_file_sources):
-        return list(_file_sources)
+        return [PathRef(path) for path in _file_sources]
 
     if safe_limit == 1:
-        return [_file_sources[0]]
+        return [PathRef(_file_sources[0])]
 
     last_index = len(_file_sources) - 1
     step = last_index / (safe_limit - 1)
@@ -210,7 +232,7 @@ def sample_files(limit=20):
             break
         indices.append(candidate)
 
-    return [_file_sources[idx] for idx in indices[:safe_limit]]
+    return [PathRef(_file_sources[idx]) for idx in indices[:safe_limit]]
 
 
 def _normalize_allowed_path(path):
