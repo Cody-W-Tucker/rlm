@@ -220,11 +220,21 @@ def read_file(path, offset=1, limit=200):
 
 
 def _read_file_lines(normalized, safe_offset, safe_limit):
-    with open(normalized, "r", encoding="utf-8") as handle:
-        lines = handle.read().splitlines()
+    selected = []
+    end_line = safe_offset + safe_limit - 1
 
-    selected = lines[safe_offset - 1 : safe_offset - 1 + safe_limit]
-    return "\n".join(f"{idx}: {line}" for idx, line in enumerate(selected, start=safe_offset))
+    # Stream until the requested window instead of materializing the whole file.
+    with open(normalized, "r", encoding="utf-8") as handle:
+        for number, line in enumerate(handle, start=1):
+            if number < safe_offset:
+                continue
+
+            selected.append((number, line.rstrip("\r\n")))
+
+            if number >= end_line:
+                break
+
+    return "\n".join(f"{number}: {line}" for number, line in selected)
 
 
 def peek_file(path, limit=40, offset=1):

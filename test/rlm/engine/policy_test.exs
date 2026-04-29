@@ -62,6 +62,7 @@ defmodule Rlm.Engine.PolicyTest do
     assert prompt =~ "use `grep_files()` with high-signal query terms"
     assert prompt =~ "`grep_open()` when you want immediate previews"
     assert prompt =~ "prefer `peek_hit(hit)` or `open_hit(hit)`"
+    assert prompt =~ "For large line-delimited files such as `jsonl`, logs, CSV, or TSV"
     assert prompt =~ "do not force every claim into a `(from /path/to/file)` label"
     assert prompt =~ "If a concept is synthesized across multiple notes, say so"
     assert prompt =~ "Prefer `peek_file()` before `read_file()`"

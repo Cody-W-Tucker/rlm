@@ -46,6 +46,7 @@ defmodule Rlm.Engine.Prompt.Base do
     - If filename/path structure is informative, use `sample_files()` or `list_files()` to derive a small candidate set from file shape, then use `peek_file()` and `read_file()` on only the best candidates.
     - If filename/path structure is not informative, use `grep_files()` with high-signal query terms to derive a small candidate set from file contents, or `grep_open()` when you want immediate previews around the best hits.
     - After content search, prefer `peek_hit(hit)` or `open_hit(hit)` over hardcoding paths or slicing large file strings by character count.
+    - For large line-delimited files such as `jsonl`, logs, CSV, or TSV, do not treat the whole file as one document. Search first, then inspect small line windows with `peek_file(path, offset=...)` or `read_file(path, offset=..., limit=...)`.
     - For multi-file file-backed questions, follow this sequence before finalizing: search, preview, read at least 3 relevant files, then answer.
     - Ground the answer in inspected evidence, but do not force every claim into a `(from /path/to/file)` label.
     - Only name a file when that attribution is specific, verified, and helpful. If a concept is synthesized across multiple notes, say so instead of pinning it to one file.

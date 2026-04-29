@@ -495,6 +495,23 @@ defmodule Rlm.TestFileShapeProvider do
   end
 end
 
+defmodule Rlm.TestLargeOffsetFileAccessProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(_history, _system_prompt, _settings) do
+    {:ok,
+     %{
+       text: "```python\npath = list_files()[0]\npreview = peek_file(path, offset=995, limit=3)\ncontent = read_file(path, offset=999, limit=2)\nprint(preview)\nFINAL(content)\n```",
+       input_tokens: 0,
+       output_tokens: 0
+     }}
+  end
+
+  def complete_subquery(_sub_context, _instruction, _settings) do
+    {:ok, %{text: "unused", input_tokens: 0, output_tokens: 0}}
+  end
+end
+
 defmodule Rlm.TestEvidenceTrackingProvider do
   @behaviour Rlm.Providers.Provider
 
@@ -1068,6 +1085,28 @@ defmodule Rlm.EngineTest do
     assert stdout =~ "a.txt"
     assert stdout =~ "b.txt"
     assert stdout =~ "1: alpha"
+  end
+
+  test "read_file and peek_file support large late-file windows without whole-file access assumptions" do
+    tmp = TestHelpers.temp_dir("rlm-engine-large-window")
+    on_exit(fn -> File.rm_rf!(tmp) end)
+
+    lines = Enum.map_join(1..1_000, "\n", fn index -> Jason.encode!(%{"row" => index}) end) <> "\n"
+
+    File.write!(Path.join(tmp, "events.jsonl"), lines)
+    settings = TestHelpers.settings(%{max_iterations: 1})
+
+    assert {:ok, bundle} = Rlm.Context.Loader.load({:path, Path.join(tmp, "events.jsonl")}, settings)
+
+    assert {:ok, result} =
+             Engine.run("inspect tail window", bundle, settings, Rlm.TestLargeOffsetFileAccessProvider)
+
+    assert result.completed?
+    assert result.answer == "999: {\"row\":999}\n1000: {\"row\":1000}"
+
+    stdout = hd(result.iteration_records).stdout
+    assert stdout =~ "995: {\"row\":995}"
+    assert stdout =~ "997: {\"row\":997}"
   end
 
   test "iteration feedback steers silent sub-query results toward finalization" do
