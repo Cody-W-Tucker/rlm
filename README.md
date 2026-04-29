@@ -67,6 +67,166 @@ mix rlm run --file README.md "Summarize this file"
 
 Each finished run is saved as JSON under the configured storage directory.
 
+## Architecture
+
+The project is split into a small number of layers with explicit responsibilities.
+
+```text
+CLI / Session
+  -> Context loading and normalization
+  -> Engine orchestration
+  -> Provider request/stream handling
+  -> Persistent Python runtime
+```
+
+### CLI Layer
+
+- `lib/rlm/cli.ex`: one-shot CLI entrypoint
+- `lib/rlm/cli/session.ex`: interactive session loop and slash commands
+- `lib/rlm/cli/context.ex`: shared context loading and merging helpers
+- `lib/rlm/cli/runner.ex`: shared run-and-persist flow
+- `lib/rlm/cli/events.ex`: shared event formatting for stderr and interactive output
+
+This layer is responsible for user-facing I/O, not execution policy.
+
+### Context Layer
+
+- `lib/rlm/context/loader.ex`: loads files, directories, globs, URLs, pasted text, and stdin-backed content into a normalized bundle
+
+The engine consumes a context bundle instead of dealing with raw file or URL inputs directly.
+
+### Engine Layer
+
+- `lib/rlm/engine.ex`: facade for a single run
+- `lib/rlm/engine/iteration.ex`: main loop, recovery path, and sub-query flow
+- `lib/rlm/engine/finalizer.ex`: result shaping and partial/failure rendering
+- `lib/rlm/engine/failure.ex`: structured failure classification
+- `lib/rlm/engine/recovery.ex`: recovery policy
+- `lib/rlm/engine/prompt/`: prompt generation and iteration feedback
+- `lib/rlm/engine/grounding/`: file-backed grounding validation and grading
+
+This layer decides whether a run should continue, recover, or finalize.
+
+See `lib/rlm/engine/README.md` for a focused engine map.
+
+### Provider Layer
+
+- `lib/rlm/providers/openai.ex`: OpenAI-compatible request construction
+- `lib/rlm/providers/request_manager.ex`: streamed response collection, timeout handling, and partial-output retention
+
+The provider layer turns model API responses into plain text for the engine.
+
+### Runtime Bridge
+
+- `lib/rlm/runtime/python_repl.ex`: GenServer facade around the Python subprocess
+- `lib/rlm/runtime/python_repl/`: protocol, port, state, and sub-query task helpers
+- `priv/runtime.py`: thin Python entrypoint
+- `priv/runtime/`: Python runtime internals
+
+This layer is the boundary between Elixir orchestration and persistent Python execution.
+
+See `priv/runtime/README.md` for the runtime protocol and Python module map.
+
+## Run Flow
+
+For a normal one-shot CLI run:
+
+1. `Rlm.CLI` parses args and builds settings.
+2. `Rlm.CLI.Context` loads inputs into a context bundle.
+3. `Rlm.CLI.Runner` calls `Rlm.Engine.run/5`.
+4. `Rlm.Engine` starts `RunState` and `PythonRepl`.
+5. `Rlm.Engine.Iteration` asks the provider for Python code.
+6. `Rlm.Engine.Execution.BlockRunner` executes the returned code in the persistent Python runtime.
+7. The Python runtime may call back into Elixir with `llm_query` sub-queries.
+8. The engine classifies the runtime result and either:
+   - finalizes,
+   - recovers with a stricter next step, or
+   - continues to another iteration.
+9. `Rlm.CLI.Runner` persists the final run record through `RunStore`.
+
+## Special Patterns
+
+These patterns are intentional and are the main ways the project stays manageable.
+
+### Thin Facades Over Focused Modules
+
+Top-level modules now stay small and stable while detailed behavior moves behind them.
+
+Examples:
+
+- `Rlm.Engine` delegates to `Iteration` and `Finalizer`
+- `Rlm.Runtime.PythonRepl` delegates to protocol, port, and task helpers
+- `priv/runtime.py` delegates to `priv/runtime/`
+
+This keeps public entrypoints stable while making internal changes safer.
+
+### Persistent Python Runtime Instead Of One Process Per Block
+
+The runtime keeps namespace state across iterations and code blocks.
+
+That enables:
+
+- multi-block execution in one iteration
+- top-level variable reuse
+- async sub-query coordination
+- targeted file inspection without rehydrating everything each time
+
+### Model Writes Code, Not Final Prose First
+
+The root model produces Python, not just an answer string.
+
+That allows the system to:
+
+- search the corpus
+- inspect files directly
+- run sub-queries selectively
+- record evidence and grounding behavior
+- distinguish between scout-only and read-backed answers
+
+### Recovery Is Structured, Not Ad Hoc
+
+The engine does not just retry blindly.
+
+It classifies failures, records them, and applies a constrained recovery strategy.
+
+Examples:
+
+- malformed or partial Python output can still be salvaged
+- top-level `await` falls back through an async wrapper
+- weak grounding can trigger a stricter follow-up iteration
+- provider partial output can still become the best partial answer
+
+### File-Backed Grounding Is Explicit
+
+For file-backed corpora, the system tracks whether the model only searched, previewed, or actually read files.
+
+This supports:
+
+- grounding grades
+- blocking unsupported file citations
+- preferring read-backed final answers over scout-only synthesis
+
+### Shared Flow For One-Shot And Interactive Modes
+
+One-shot CLI and interactive session mode now share:
+
+- context normalization
+- run execution and persistence
+- event formatting
+
+That reduces behavior drift between entrypoints.
+
+### Line-Delimited JSON Across The Elixir/Python Boundary
+
+The Elixir runtime bridge and the Python subprocess communicate using a small line-delimited JSON protocol.
+
+That gives the project:
+
+- a debuggable boundary
+- explicit message types
+- recoverable subprocess failures
+- a clean place to evolve runtime capabilities without entangling them with engine policy
+
 ## Configuration
 
 Configuration is loaded from Elixir application config, not shell environment variables.

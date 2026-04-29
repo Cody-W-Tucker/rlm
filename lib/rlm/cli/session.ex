@@ -1,12 +1,13 @@
 defmodule Rlm.CLI.Session do
   @moduledoc "Interactive CLI session with persistent context and slash commands."
 
-  alias Rlm.Context.Loader
-  alias Rlm.Engine
+  alias Rlm.CLI.Context
+  alias Rlm.CLI.Events
+  alias Rlm.CLI.Runner
   alias Rlm.Settings
   alias Rlm.Storage.RunStore
 
-  defstruct [:settings, :provider_module, :io, context_bundle: Loader.empty_bundle()]
+  defstruct [:settings, :provider_module, :io, context_bundle: Context.empty_bundle()]
 
   @type t :: %__MODULE__{}
 
@@ -16,7 +17,7 @@ defmodule Rlm.CLI.Session do
   end
 
   def merge_context(%__MODULE__{} = state, bundle) do
-    with {:ok, merged} <- Loader.append(state.context_bundle, bundle, state.settings) do
+    with {:ok, merged} <- Context.append(state.context_bundle, bundle, state.settings) do
       {:ok, %{state | context_bundle: merged}}
     end
   end
@@ -70,7 +71,7 @@ defmodule Rlm.CLI.Session do
 
   defp handle_command(state, "/clear-context") do
     state.io.puts.("Context cleared.")
-    {:continue, %{state | context_bundle: Loader.empty_bundle()}}
+    {:continue, %{state | context_bundle: Context.empty_bundle()}}
   end
 
   defp handle_command(state, "/runs") do
@@ -90,8 +91,8 @@ defmodule Rlm.CLI.Session do
 
     pasted = read_paste_lines(state, [])
 
-    with {:ok, bundle} <- Loader.from_text(pasted, "paste", state.settings),
-         {:ok, merged} <- Loader.append(state.context_bundle, bundle, state.settings) do
+    with {:ok, bundle} <- Context.from_text(pasted, "paste", state.settings),
+         {:ok, merged} <- Context.append(state.context_bundle, bundle, state.settings) do
       state.io.puts.("Pasted text loaded.")
       {:continue, %{state | context_bundle: merged}}
     else
@@ -110,7 +111,7 @@ defmodule Rlm.CLI.Session do
   end
 
   defp handle_prompt(state, trimmed) do
-    {context_sources, prompt} = inline_context_prompt(trimmed)
+    {context_sources, prompt} = Context.inline_context_prompt(trimmed)
 
     with {:ok, state} <- maybe_inline_load(state, context_sources),
          {:ok, result} <- maybe_run_prompt(state, prompt) do
@@ -128,17 +129,10 @@ defmodule Rlm.CLI.Session do
     end
   end
 
-  def inline_context_prompt(line) do
-    tokens = String.split(line, ~r/\s+/, trim: true)
-    {sources, rest} = Enum.split_while(tokens, &String.starts_with?(&1, "@"))
-    {Enum.map(sources, &{:path, String.trim_leading(&1, "@")}), Enum.join(rest, " ")}
-  end
-
   defp maybe_inline_load(state, []), do: {:ok, state}
 
   defp maybe_inline_load(state, sources) do
-    with {:ok, bundle} <- Loader.load_many(sources, state.settings),
-         {:ok, merged} <- Loader.append(state.context_bundle, bundle, state.settings) do
+    with {:ok, merged, _bundle} <- Context.append_sources(state.context_bundle, sources, state.settings) do
       {:ok, %{state | context_bundle: merged}}
     end
   end
@@ -147,46 +141,17 @@ defmodule Rlm.CLI.Session do
 
   defp maybe_run_prompt(state, prompt) do
     with {:ok, result} <-
-           Engine.run(prompt, state.context_bundle, state.settings, state.provider_module,
+           Runner.run_with_bundle(prompt, state.context_bundle, state.settings, state.provider_module,
              mode: :interactive,
-             on_event: &display_event(state, &1)
-           ),
-         {:ok, _path} <-
-           RunStore.persist(result, state.context_bundle, state.settings, mode: :interactive) do
+             on_event: Events.interactive_reporter(state.io.puts)
+           ) do
       {:ok, result}
     end
   end
 
   defp describe_context(state) do
-    if state.context_bundle.entries == [] do
-      state.io.puts.("No context loaded.")
-    else
-      state.io.puts.(
-        "Loaded #{length(state.context_bundle.entries)} source(s), #{state.context_bundle.bytes} preloaded bytes, #{Map.get(state.context_bundle, :lazy_bytes, 0)} lazy file-backed bytes."
-      )
-
-      Enum.each(state.context_bundle.entries, fn entry -> state.io.puts.("- #{entry.label}") end)
-    end
+    Enum.each(Context.describe_context(state.context_bundle), &state.io.puts.(&1))
   end
-
-  defp display_event(state, %{type: :emit_progress, message: message}),
-    do: state.io.puts.("[progress] #{message}")
-
-  defp display_event(state, %{type: :inspect_context, label: label}),
-    do: state.io.puts.("[inspect] #{label}")
-
-  defp display_event(state, %{type: :sub_query_start, label: label, prompt: prompt}),
-    do: state.io.puts.("[sub-query] #{label}: #{prompt}")
-
-  defp display_event(state, %{
-         type: :iteration_output,
-         iteration: iteration,
-         stream: stream,
-         text: text
-       }),
-       do: state.io.puts.("[iteration #{iteration} #{stream}]\n#{String.trim_trailing(text)}")
-
-  defp display_event(_state, _event), do: :ok
 
   defp help_text do
     """
@@ -250,8 +215,7 @@ defmodule Rlm.CLI.Session do
       |> String.split(~r/\s+/, trim: true)
       |> Enum.map(&{:path, &1})
 
-    with {:ok, bundle} <- Loader.load_many(sources, state.settings),
-         {:ok, merged} <- Loader.append(state.context_bundle, bundle, state.settings) do
+    with {:ok, merged, bundle} <- Context.append_sources(state.context_bundle, sources, state.settings) do
       state.io.puts.("Loaded #{length(bundle.entries)} context source(s).")
       {:continue, %{state | context_bundle: merged}}
     else
@@ -262,8 +226,7 @@ defmodule Rlm.CLI.Session do
   defp handle_url_command(state, command) do
     url = String.replace_prefix(command, "/url ", "")
 
-    with {:ok, bundle} <- Loader.load({:url, url}, state.settings),
-         {:ok, merged} <- Loader.append(state.context_bundle, bundle, state.settings) do
+    with {:ok, merged, _bundle} <- Context.append_source(state.context_bundle, {:url, url}, state.settings) do
       state.io.puts.("Loaded #{url}.")
       {:continue, %{state | context_bundle: merged}}
     else

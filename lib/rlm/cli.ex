@@ -1,11 +1,11 @@
 defmodule Rlm.CLI do
   @moduledoc "CLI entrypoint for one-shot RLM runs."
 
-  alias Rlm.Context.Loader
+  alias Rlm.CLI.Context
+  alias Rlm.CLI.Events
+  alias Rlm.CLI.Runner
   alias Rlm.Providers
-  alias Rlm.Engine
   alias Rlm.Settings
-  alias Rlm.Storage.RunStore
 
   @switches [
     file: :keep,
@@ -72,16 +72,16 @@ defmodule Rlm.CLI do
     with {:ok, parsed} <- parse_args(args),
          prompt when is_binary(prompt) and prompt != "" <- Enum.join(parsed.positionals, " "),
          {:ok, settings} <- build_settings(parsed.options),
-         {:ok, context_bundle} <- context_bundle(parsed.options, settings),
+         {:ok, context_bundle} <- Context.load_cli_bundle(parsed.options, settings),
          {:ok, result} <-
-           Engine.run(
+           Runner.run_with_bundle(
              prompt,
              context_bundle,
              settings,
              provider_module(opts, settings),
-             on_event: stderr_reporter(parsed.options[:verbose])
-           ),
-         {:ok, _path} <- RunStore.persist(result, context_bundle, settings, mode: :cli) do
+             mode: :cli,
+             on_event: Events.stderr_reporter(parsed.options[:verbose])
+           ) do
       IO.puts(result.answer)
       :ok
     else
@@ -113,55 +113,5 @@ defmodule Rlm.CLI do
 
   defp provider_module(opts, settings) do
     Keyword.get(opts, :provider_module, Providers.for(settings.provider))
-  end
-
-  defp context_bundle(options, settings) do
-    sources =
-      options
-      |> Keyword.get_values(:file)
-      |> Enum.map(&{:path, &1})
-      |> Kernel.++(Enum.map(Keyword.get_values(options, :url), &{:url, &1}))
-      |> Kernel.++(Enum.map(Keyword.get_values(options, :text), &{:text, &1}))
-
-    with {:ok, bundle} <- Loader.load_many(sources, settings),
-         {:ok, bundle} <- maybe_read_stdin(bundle, options, settings) do
-      {:ok, bundle}
-    end
-  end
-
-  defp maybe_read_stdin(bundle, options, settings) do
-    if options[:stdin] do
-      stdin_text = IO.read(:stdio, :all)
-
-      with {:ok, stdin_bundle} <- Loader.from_text(stdin_text, "stdin", settings) do
-        Loader.append(bundle, stdin_bundle, settings)
-      end
-    else
-      {:ok, bundle}
-    end
-  end
-
-  defp stderr_reporter(false), do: nil
-  defp stderr_reporter(nil), do: nil
-
-  defp stderr_reporter(_true) do
-    fn event ->
-      message =
-        case event do
-          %{type: :iteration_start, iteration: iteration, prompt: prompt} ->
-            "iteration #{iteration}: #{prompt}"
-
-          %{type: :generated_code, iteration: iteration, code: code} ->
-            "iteration #{iteration} generated code (#{String.length(code)} chars)"
-
-          %{type: :iteration_output, iteration: iteration, stream: stream, text: text} ->
-            "iteration #{iteration} #{stream}:\n#{String.trim_trailing(text)}"
-
-          _ ->
-            nil
-        end
-
-      if message, do: IO.puts(:stderr, message)
-    end
   end
 end
