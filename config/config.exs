@@ -15,7 +15,7 @@ config :rlm, Rlm.Settings,
   max_depth: 1,
   max_sub_queries: 24,
   truncate_length: 5_000,
-  max_context_bytes: 10 * 1024 * 1024,
+  max_context_bytes: 50 * 1024 * 1024,
   max_context_files: 5000,
   max_slice_chars: 4_000,
   storage_dir: Path.expand("~/.local/state/rlm/runs")
