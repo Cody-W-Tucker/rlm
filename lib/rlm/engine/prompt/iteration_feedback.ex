@@ -86,13 +86,13 @@ defmodule Rlm.Engine.Prompt.IterationFeedback do
   defp grounding_note(exec_result, context_bundle) do
     case Grade.assess(context_bundle, [%{details: exec_result.details || %{}}]) do
       %{grade: grade, level: :scout_only} ->
-        "Current grounding grade: #{grade} (scout-only). The previews and grep hits are useful for high-value introspection, but promote the strongest candidates to `read_file()` and read at least 3 relevant files before finalizing an evidence-heavy answer."
+        "Current grounding grade: #{grade} (scout-only). The previews and grep hits are useful for high-value introspection, but promote the strongest candidates to targeted `read_file()` windows and read at least 3 relevant files before finalizing an evidence-heavy answer."
 
       %{grade: grade, level: :search_only} ->
-        "Current grounding grade: #{grade} (search-only). Search narrowed the corpus, but inspect concrete file windows with `peek_hit()`, `open_hit()`, or `peek_file()`, then read at least 3 relevant files before finalizing."
+        "Current grounding grade: #{grade} (search-only). Search narrowed the corpus, but inspect concrete file windows with `peek_hit()`, `open_hit()`, or `peek_file()`, then promote the best candidates to targeted `read_file()` windows across at least 3 relevant files before finalizing."
 
       %{grade: grade, level: :read_backed, metrics: %{read_files: read_files}} ->
-        "Current grounding grade: #{grade} (limited read-backed). You have only read #{read_files} file(s). For a multi-file corpus, keep the working set small, but read at least 3 relevant files before finalizing."
+        "Current grounding grade: #{grade} (limited read-backed). You have only read #{read_files} file(s). For a multi-file corpus, keep the working set small, but read targeted windows from at least 3 relevant files before finalizing."
 
       %{grade: grade, label: label, summary: summary} ->
         "Current grounding grade: #{grade} (#{label}). #{summary}"

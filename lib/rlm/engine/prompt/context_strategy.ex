@@ -8,6 +8,7 @@ defmodule Rlm.Engine.Prompt.ContextStrategy do
     source_count = length(context_bundle.entries)
     lazy_entries = Map.get(context_bundle, :lazy_entries, [])
     lazy_file_count = length(lazy_entries)
+    lazy_bytes = Map.get(context_bundle, :lazy_bytes, 0)
     inline_chars = String.length(context)
     structure_hint = structure_hint(context_bundle, context)
 
@@ -21,10 +22,10 @@ defmodule Rlm.Engine.Prompt.ContextStrategy do
     access_hint =
       cond do
         lazy_file_count > 0 and inline_chars > 0 ->
-          "Inline text is available in `context`. For file-backed sources, use `list_files()` or `sample_files()` to inspect file shape, `peek_file(path)` for light inspection, `read_file(path)` for deeper reads, `grep_files(pattern)` for reusable hits, and `grep_open(pattern)` for search-plus-preview."
+          "Inline text is available in `context`. For file-backed sources, use `list_files()` or `sample_files()` to inspect file shape, `peek_file(path)` for light inspection, `read_file(path)` for deeper reads, `grep_files(pattern)` for reusable hits, and `grep_open(pattern)` for search-plus-preview. For JSONL corpora, use `sample_jsonl(path)` to inspect schema and `grep_jsonl_fields(path, field_pattern, text_pattern)` for record-aware retrieval."
 
         lazy_file_count > 0 ->
-          "Context is file-backed. Use `list_files()` or `sample_files()` to inspect file shape, `peek_file(path)` for light inspection, `read_file(path)` for deeper reads, `grep_files(pattern)` for reusable hits, and `grep_open(pattern)` for search-plus-preview instead of assuming `context` contains the corpus. For multi-file questions, search first, preview the best matches, then read at least 3 relevant files before final synthesis."
+          "Context is file-backed. Use `list_files()` or `sample_files()` to inspect file shape, `peek_file(path)` for light inspection, `read_file(path)` for deeper reads, `grep_files(pattern)` for reusable hits, and `grep_open(pattern)` for search-plus-preview instead of assuming `context` contains the corpus. For JSONL corpora, use `sample_jsonl(path)` to inspect schema and `grep_jsonl_fields(path, field_pattern, text_pattern)` for record-aware retrieval. For multi-file questions, search first, preview the best matches, then read at least 3 relevant files before final synthesis. For large line-delimited files, targeted `read_file()` windows count as direct inspection."
 
         true ->
           "Context is preloaded in `context`."
@@ -39,7 +40,7 @@ defmodule Rlm.Engine.Prompt.ContextStrategy do
           "This looks medium-sized. Start with direct synthesis, then one narrow sub-query if needed, and only then consider small sequential chunking."
 
         lazy_file_count > 0 ->
-          "This looks file-backed. First decide whether filename or path structure is informative. If it is, derive candidates from file shape. If it is not, derive candidates from content matches. Then recurse only on the top candidates and keep the working set small."
+          "This looks file-backed. First decide whether filename or path structure is informative. If it is, derive candidates from file shape. If it is not, derive candidates from content matches. For JSONL or chat-history corpora, sample schema first, then retrieve records through field-aware searches and targeted windows. Recurse only on the top candidates and keep the working set small."
 
         true ->
           "This looks large. Structure the work carefully, keep chunk counts low, and maintain a best-so-far answer."
@@ -48,7 +49,8 @@ defmodule Rlm.Engine.Prompt.ContextStrategy do
     [
       "Context Header:",
       "  - Query: #{prompt}",
-      "  - Aggregate size: #{context_bundle.bytes} bytes across #{source_count} source(s)",
+      "  - Preloaded context size: #{context_bundle.bytes} bytes across #{source_count} source(s)",
+      "  - Lazy file-backed size: #{lazy_bytes} bytes across #{lazy_file_count} file(s)",
       "  - Preloaded context chars: #{inline_chars}",
       "  - File-backed sources: #{lazy_file_count}",
       "  - Source types: #{source_types_display}",
@@ -68,6 +70,9 @@ defmodule Rlm.Engine.Prompt.ContextStrategy do
       labels != [] and mostly_weekly?(labels) ->
         "Likely weekly or dated notes grouped by week-like source names."
 
+      labels != [] and mostly_jsonl?(labels) ->
+        "Likely line-delimited structured records such as JSONL or event/chat history."
+
       labels != [] ->
         "Likely file-based context assembled from source paths."
 
@@ -85,5 +90,10 @@ defmodule Rlm.Engine.Prompt.ContextStrategy do
   defp mostly_weekly?(labels) do
     weekly_count = Enum.count(labels, &Regex.match?(~r/week[-\s_]?[0-9]+/i, Path.basename(&1)))
     weekly_count * 2 >= length(labels)
+  end
+
+  defp mostly_jsonl?(labels) do
+    jsonl_count = Enum.count(labels, &String.ends_with?(String.downcase(Path.basename(&1)), ".jsonl"))
+    jsonl_count * 2 >= length(labels)
   end
 end

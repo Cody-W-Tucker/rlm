@@ -26,11 +26,36 @@ defmodule Rlm.Engine.PolicyTest do
              "Structure hint: Likely weekly or dated notes grouped by week-like source names."
 
     assert metadata =~ "File-backed sources: 2"
+    assert metadata =~ "Lazy file-backed size: 0 bytes across 2 file(s)"
     assert metadata =~ "Grounding hint: Base the final answer on retrieved evidence"
+    assert metadata =~ "targeted `read_file()` windows count as inspected evidence"
     assert metadata =~ "Prefer verified claims and observed excerpts over path-heavy attribution"
     assert metadata =~ "Metadata budget: constant-size summary only"
     refute metadata =~ "/tmp/Week-09-2025.md"
     refute metadata =~ "First 20 files"
+  end
+
+  test "context metadata highlights jsonl-specific retrieval hints" do
+    settings = TestHelpers.settings()
+
+    bundle = %{
+      entries: [
+        %{label: "/tmp/chat-history.jsonl", type: :file}
+      ],
+      lazy_entries: [
+        %{label: "/tmp/chat-history.jsonl", type: :file}
+      ],
+      text: "",
+      bytes: 0,
+      lazy_bytes: 10_000
+    }
+
+    metadata = Policy.context_metadata(bundle, settings, "summarize coding style")
+
+    assert metadata =~ "Likely line-delimited structured records such as JSONL or event/chat history."
+    assert metadata =~ "sample_jsonl(path)"
+    assert metadata =~ "grep_jsonl_fields(path, field_pattern, text_pattern)"
+    assert metadata =~ "sample schema first"
   end
 
   test "system prompt requires scouting before chunking" do
@@ -59,15 +84,21 @@ defmodule Rlm.Engine.PolicyTest do
     assert prompt =~ "Do not spend iterations re-deriving filenames"
     assert prompt =~ "first decide whether filename/path structure is informative"
     assert prompt =~ "use `sample_files()` or `list_files()`"
+    assert prompt =~ "`read_jsonl(path, offset=1, limit=20)`"
+    assert prompt =~ "`sample_jsonl(path, limit=20)`"
+    assert prompt =~ "`grep_jsonl_fields(path, field_pattern, text_pattern=\".*\", limit=20)`"
     assert prompt =~ "use `grep_files()` with high-signal query terms"
     assert prompt =~ "`grep_open()` when you want immediate previews"
     assert prompt =~ "prefer `peek_hit(hit)` or `open_hit(hit)`"
     assert prompt =~ "For large line-delimited files such as `jsonl`, logs, CSV, or TSV"
+    assert prompt =~ "For JSONL or chat-history corpora, first inspect the schema with `sample_jsonl()`"
+    assert prompt =~ "a targeted `read_file()` window counts as direct inspection"
     assert prompt =~ "do not force every claim into a `(from /path/to/file)` label"
     assert prompt =~ "If a concept is synthesized across multiple notes, say so"
     assert prompt =~ "Prefer `peek_file()` before `read_file()`"
     assert prompt =~ "search, preview, read at least 3 relevant files, then answer"
     assert prompt =~ "usually 3-4 direct reads"
+    assert prompt =~ "prefer a brief structured evidence pass first"
 
     assert prompt =~
              "prefer parallel sub-queries with `asyncio.gather(async_llm_query(...), ...)`"

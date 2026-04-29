@@ -117,13 +117,15 @@ Important settings:
 - `max_sub_queries`
 - `truncate_length`
 - `max_context_bytes`
+- `max_lazy_file_bytes`
 - `max_context_files`
 - `storage_dir`
 
 ## Safety Limits
 
 - up to 1000 loaded files per run
-- up to 50 MB of aggregate context text
+- up to 50 MB of aggregate preloaded context text
+- up to 500 MB per lazy file-backed source
 - bounded root iterations and sub-query count
 - truncated execution feedback between iterations
 

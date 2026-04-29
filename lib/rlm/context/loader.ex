@@ -7,7 +7,7 @@ defmodule Rlm.Context.Loader do
   @excluded_segments MapSet.new([".git", "_build", "deps", "node_modules"])
 
   def empty_bundle do
-    %{entries: [], text: "", bytes: 0, lazy_entries: []}
+    %{entries: [], text: "", bytes: 0, lazy_bytes: 0, lazy_entries: []}
   end
 
   def load_many(sources, %Settings{} = settings) do
@@ -26,6 +26,7 @@ defmodule Rlm.Context.Loader do
       entries: bundle.entries ++ loaded_bundle.entries,
       text: join_text(bundle.text, loaded_bundle.text),
       bytes: bundle.bytes + loaded_bundle.bytes,
+      lazy_bytes: Map.get(bundle, :lazy_bytes, 0) + Map.get(loaded_bundle, :lazy_bytes, 0),
       lazy_entries: bundle.lazy_entries ++ Map.get(loaded_bundle, :lazy_entries, [])
     }
 
@@ -44,7 +45,8 @@ defmodule Rlm.Context.Loader do
         metadata: %{source: label}
       }
 
-      {:ok, %{entries: [entry], text: valid_text, bytes: byte_size(valid_text), lazy_entries: []}}
+      {:ok,
+       %{entries: [entry], text: valid_text, bytes: byte_size(valid_text), lazy_bytes: 0, lazy_entries: []}}
     end
   end
 
@@ -72,17 +74,17 @@ defmodule Rlm.Context.Loader do
 
   defp load_file(path, %Settings{} = settings) do
     with {:ok, stat} <- File.stat(path),
-         {:ok, size} <- ensure_file_limit(stat.size, settings.max_context_bytes, path) do
+         {:ok, size} <- ensure_file_limit(stat.size, settings.max_lazy_file_bytes, path) do
       entry = %Entry{
         id: unique_id(),
         type: :file,
         label: path,
         text: "",
-        bytes: size,
+        bytes: 0,
         metadata: %{path: path, lazy: true}
       }
 
-      {:ok, %{entries: [entry], text: "", bytes: size, lazy_entries: [entry]}}
+      {:ok, %{entries: [entry], text: "", bytes: 0, lazy_bytes: size, lazy_entries: [entry]}}
     end
   end
 
@@ -148,7 +150,8 @@ defmodule Rlm.Context.Loader do
             metadata: %{url: url, status: status}
           }
 
-          {:ok, %{entries: [entry], text: text, bytes: byte_size(text), lazy_entries: []}}
+          {:ok,
+           %{entries: [entry], text: text, bytes: byte_size(text), lazy_bytes: 0, lazy_entries: []}}
         end
 
       {:ok, %{status: status}} ->
@@ -171,8 +174,8 @@ defmodule Rlm.Context.Loader do
         {:error, "Loaded context exceeds the #{settings.max_context_files} file safety limit."}
 
       bundle.bytes > settings.max_context_bytes ->
-        {:error,
-         "Loaded context exceeds the #{div(settings.max_context_bytes, 1024 * 1024)}MB safety limit."}
+         {:error,
+          "Loaded preloaded context exceeds the #{div(settings.max_context_bytes, 1024 * 1024)}MB safety limit."}
 
       true ->
         {:ok, bundle}

@@ -30,6 +30,7 @@ defmodule Rlm.SettingsTest do
       max_sub_queries: 4,
       truncate_length: 500,
       max_context_bytes: 2_048,
+      max_lazy_file_bytes: 4_096,
       max_context_files: 4,
       max_slice_chars: 256,
       storage_dir: "/tmp/config-storage"
@@ -61,6 +62,7 @@ defmodule Rlm.SettingsTest do
       max_sub_queries: 24,
       truncate_length: 5_000,
       max_context_bytes: 10_485_760,
+      max_lazy_file_bytes: 52_428_800,
       max_context_files: 100,
       max_slice_chars: 4_000,
       storage_dir: "/tmp/openai-storage"
@@ -73,5 +75,10 @@ defmodule Rlm.SettingsTest do
   test "validates numeric ranges" do
     assert {:error, message} = Settings.load(%{provider: :mock, max_iterations: 0})
     assert message =~ "max_iterations"
+  end
+
+  test "validates max_lazy_file_bytes range" do
+    assert {:error, message} = Settings.load(%{provider: :mock, max_lazy_file_bytes: 0})
+    assert message =~ "max_lazy_file_bytes"
   end
 end

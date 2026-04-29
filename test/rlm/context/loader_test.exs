@@ -65,13 +65,34 @@ defmodule Rlm.Context.LoaderTest do
     assert hd(bundle.entries).type == :url
   end
 
-  test "enforces aggregate safety limits", %{tmp: tmp} do
+  test "enforces aggregate preloaded text safety limits", %{tmp: tmp} do
     File.write!(Path.join(tmp, "one.txt"), String.duplicate("a", 700))
     File.write!(Path.join(tmp, "two.txt"), String.duplicate("b", 700))
 
     settings = TestHelpers.settings(%{storage_dir: tmp, max_context_bytes: 1_024})
 
-    assert {:error, message} = Loader.load({:path, tmp}, settings)
+    assert {:error, message} = Loader.load({:text, String.duplicate("x", 1_100)}, settings)
+    assert message =~ "safety limit"
+  end
+
+  test "does not count lazy file sizes against aggregate preloaded limits", %{tmp: tmp} do
+    File.write!(Path.join(tmp, "one.txt"), String.duplicate("a", 700))
+    File.write!(Path.join(tmp, "two.txt"), String.duplicate("b", 700))
+
+    settings = TestHelpers.settings(%{storage_dir: tmp, max_context_bytes: 1_024})
+
+    assert {:ok, bundle} = Loader.load({:path, tmp}, settings)
+    assert bundle.bytes == 0
+    assert bundle.lazy_bytes == 1_400
+  end
+
+  test "enforces lazy file size limits", %{tmp: tmp} do
+    File.write!(Path.join(tmp, "large.txt"), String.duplicate("a", 1_500))
+
+    settings =
+      TestHelpers.settings(%{storage_dir: tmp, max_context_bytes: 1_024, max_lazy_file_bytes: 1_024})
+
+    assert {:error, message} = Loader.load({:path, Path.join(tmp, "large.txt")}, settings)
     assert message =~ "safety limit"
   end
 end

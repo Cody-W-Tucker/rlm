@@ -35,6 +35,7 @@ defmodule Rlm.Storage.RunStore do
       mode: Keyword.get(opts, :mode, :interactive),
       context_sources: Enum.map(context_bundle.entries, & &1.label),
       context_bytes: context_bundle.bytes,
+      context_lazy_bytes: Map.get(context_bundle, :lazy_bytes, 0),
       recorded_at: DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601(),
       iteration_records: result.iteration_records
     }

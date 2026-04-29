@@ -84,6 +84,20 @@ class OpenedHit(Hit):
         return str(self)
 
 
+class JsonlFieldHit:
+    def __init__(self, path, line, field, value):
+        self.path = path
+        self.line = line
+        self.field = field
+        self.value = value
+
+    def __str__(self):
+        return f"{self.path}:{self.line}: {self.field}={self.value}"
+
+    def __repr__(self):
+        return str(self)
+
+
 def FINAL(value):
     global __final_result__
     __final_result__ = str(value)
@@ -237,6 +251,132 @@ def _read_file_lines(normalized, safe_offset, safe_limit):
     return "\n".join(f"{number}: {line}" for number, line in selected)
 
 
+def _read_lines(normalized, safe_offset, safe_limit):
+    selected = []
+    end_line = safe_offset + safe_limit - 1
+
+    with open(normalized, "r", encoding="utf-8") as handle:
+        for number, line in enumerate(handle, start=1):
+            if number < safe_offset:
+                continue
+
+            selected.append((number, line.rstrip("\r\n")))
+
+            if number >= end_line:
+                break
+
+    return selected
+
+
+def _parse_jsonl_line(line):
+    try:
+        return json.loads(line), None
+    except json.JSONDecodeError as error:
+        return None, str(error)
+
+
+def _jsonl_window(path, offset, limit):
+    normalized = _normalize_allowed_path(path)
+    safe_offset = max(1, int(offset))
+    safe_limit = max(1, min(int(limit), 500))
+    _evidence["read_files"].add(normalized)
+
+    records = []
+
+    for number, text in _read_lines(normalized, safe_offset, safe_limit):
+        record, error = _parse_jsonl_line(text)
+        if error is None:
+            records.append({"line": number, "record": record})
+        else:
+            records.append({"line": number, "raw": text, "error": error})
+
+    return records
+
+
+def read_jsonl(path, offset=1, limit=20):
+    return _jsonl_window(path, offset, limit)
+
+
+def _count_file_lines(normalized):
+    with open(normalized, "r", encoding="utf-8") as handle:
+        return sum(1 for _ in handle)
+
+
+def sample_jsonl(path, limit=20):
+    normalized = _normalize_allowed_path(path)
+    safe_limit = max(1, min(int(limit), 100))
+    total_lines = _count_file_lines(normalized)
+
+    if total_lines == 0:
+        return []
+
+    if safe_limit >= total_lines:
+        return _jsonl_window(normalized, 1, total_lines)
+
+    if safe_limit == 1:
+        offsets = [1]
+    else:
+        last_index = total_lines - 1
+        step = last_index / (safe_limit - 1)
+        offsets = []
+
+        for idx in range(safe_limit):
+            candidate = 1 + round(idx * step)
+            if not offsets or candidate != offsets[-1]:
+                offsets.append(candidate)
+
+    records = []
+    seen_lines = set()
+
+    for offset in offsets:
+        for item in _jsonl_window(normalized, offset, 1):
+            if item["line"] not in seen_lines:
+                seen_lines.add(item["line"])
+                records.append(item)
+
+    return records
+
+
+def _iter_json_scalar_fields(value, prefix=""):
+    if isinstance(value, dict):
+        for key, child in value.items():
+            child_prefix = f"{prefix}.{key}" if prefix else str(key)
+            yield from _iter_json_scalar_fields(child, child_prefix)
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            child_prefix = f"{prefix}[{index}]" if prefix else f"[{index}]"
+            yield from _iter_json_scalar_fields(child, child_prefix)
+    elif value is not None:
+        yield prefix or "$", str(value)
+
+
+def grep_jsonl_fields(path, field_pattern, text_pattern=".*", limit=20):
+    normalized = _normalize_allowed_path(path)
+    compiled_field = re.compile(field_pattern)
+    compiled_text = re.compile(text_pattern)
+    safe_limit = max(1, min(int(limit), 200))
+    matches = []
+    _evidence["search_patterns"].append(f"jsonl:{field_pattern}::{text_pattern}")
+
+    with open(normalized, "r", encoding="utf-8") as handle:
+        for number, line in enumerate(handle, start=1):
+            text = line.rstrip("\r\n")
+            record, error = _parse_jsonl_line(text)
+            if error is not None:
+                continue
+
+            for field, value in _iter_json_scalar_fields(record):
+                if compiled_field.search(field) and compiled_text.search(value):
+                    _evidence["hit_paths"].add(normalized)
+                    matches.append(JsonlFieldHit(normalized, number, field, value))
+                    break
+
+            if len(matches) >= safe_limit:
+                return matches
+
+    return matches
+
+
 def peek_file(path, limit=40, offset=1):
     normalized = _normalize_allowed_path(path)
     safe_offset = max(1, int(offset))
@@ -317,9 +457,12 @@ def _refresh_user_ns():
             "list_files": list_files,
             "sample_files": sample_files,
             "read_file": read_file,
+            "read_jsonl": read_jsonl,
+            "sample_jsonl": sample_jsonl,
             "peek_file": peek_file,
             "grep_files": grep_files,
             "grep_open": grep_open,
+            "grep_jsonl_fields": grep_jsonl_fields,
             "peek_hit": peek_hit,
             "open_hit": open_hit,
             "llm_query": llm_query,

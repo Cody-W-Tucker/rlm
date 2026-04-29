@@ -162,7 +162,7 @@ defmodule Rlm.CLI.Session do
       state.io.puts.("No context loaded.")
     else
       state.io.puts.(
-        "Loaded #{length(state.context_bundle.entries)} source(s), #{state.context_bundle.bytes} bytes total."
+        "Loaded #{length(state.context_bundle.entries)} source(s), #{state.context_bundle.bytes} preloaded bytes, #{Map.get(state.context_bundle, :lazy_bytes, 0)} lazy file-backed bytes."
       )
 
       Enum.each(state.context_bundle.entries, fn entry -> state.io.puts.("- #{entry.label}") end)

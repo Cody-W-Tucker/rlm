@@ -22,7 +22,7 @@ defmodule Rlm.Storage.RunStoreTest do
       iteration_records: [%{iteration: 1, events: [], actions: []}]
     }
 
-    bundle = %{entries: [%{label: "inline text"}], bytes: 42}
+    bundle = %{entries: [%{label: "inline text"}], bytes: 42, lazy_bytes: 512}
 
     assert {:ok, path} = RunStore.persist(result, bundle, settings, mode: :one_shot)
     assert File.exists?(path)
@@ -31,6 +31,8 @@ defmodule Rlm.Storage.RunStoreTest do
     assert saved["prompt"] == "What happened?"
     assert saved["mode"] == "one_shot"
     assert saved["context_sources"] == ["inline text"]
+    assert saved["context_bytes"] == 42
+    assert saved["context_lazy_bytes"] == 512
     assert saved["grounding"]["grade"] == "B"
   end
 end

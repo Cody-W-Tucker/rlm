@@ -30,6 +30,7 @@ defmodule Rlm.Settings do
     :max_sub_queries,
     :truncate_length,
     :max_context_bytes,
+    :max_lazy_file_bytes,
     :max_context_files,
     :max_slice_chars,
     :storage_dir
@@ -53,6 +54,7 @@ defmodule Rlm.Settings do
     max_sub_queries: [type: :integer, required: true],
     truncate_length: [type: :integer, required: true],
     max_context_bytes: [type: :integer, required: true],
+    max_lazy_file_bytes: [type: :integer, required: true],
     max_context_files: [type: :integer, required: true],
     max_slice_chars: [type: :integer, required: true],
     storage_dir: [type: :string, required: true]
@@ -80,6 +82,7 @@ defmodule Rlm.Settings do
       max_sub_queries: nil,
       truncate_length: nil,
       max_context_bytes: nil,
+      max_lazy_file_bytes: nil,
       max_context_files: nil,
       max_slice_chars: nil,
       storage_dir: nil
@@ -166,6 +169,7 @@ defmodule Rlm.Settings do
       {:total_timeout, 100, 600_000},
       {:truncate_length, 100, 50_000},
       {:max_context_bytes, 1_024, 100_000_000},
+      {:max_lazy_file_bytes, 1_024, 10_000_000_000},
       {:max_context_files, 1, 10_000},
       {:max_slice_chars, 64, 20_000}
     ]

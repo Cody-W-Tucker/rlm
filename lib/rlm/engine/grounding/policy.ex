@@ -10,7 +10,7 @@ defmodule Rlm.Engine.Grounding.Policy do
 
     cond do
       lazy_file_count > 0 ->
-        "Grounding hint: Base the final answer on retrieved evidence from the available files. Prefer verified claims and observed excerpts over path-heavy attribution. Name a file only when the claim comes directly from that inspected file and the attribution materially helps the answer. Do not introduce unsupported concepts as if they came from the corpus."
+        "Grounding hint: Base the final answer on retrieved evidence from the available files. Prefer verified claims and observed excerpts over path-heavy attribution. Name a file only when the claim comes directly from that inspected file and the attribution materially helps the answer. For large line-delimited files, targeted `read_file()` windows count as inspected evidence; you do not need a whole-file read unless the task requires it. Do not introduce unsupported concepts as if they came from the corpus."
 
       true ->
         "Grounding hint: Base the final answer on the observed context and avoid introducing unsupported claims as if they were present in the input."
@@ -79,7 +79,7 @@ defmodule Rlm.Engine.Grounding.Policy do
         %{grade: grade, metrics: %{read_files: read_files, search_count: search_count}}
         when read_files < @minimum_multi_file_reads and search_count >= 1 ->
           {:error,
-           "Grounding grade #{grade} is too weak for a multi-file file-backed final answer. Search, preview, then promote at least #{@minimum_multi_file_reads} relevant files to `read_file()` before finalizing from that smaller inspected set."}
+            "Grounding grade #{grade} is too weak for a multi-file file-backed final answer. Search, preview, then promote at least #{@minimum_multi_file_reads} relevant files to targeted `read_file()` inspection before finalizing from that smaller inspected set."}
 
         _ ->
           :ok
