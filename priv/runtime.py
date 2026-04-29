@@ -183,7 +183,9 @@ def llm_query(sub_context, instruction=""):
 
     event.wait()
     _pending_results.pop(request_id, None)
-    result = _result_store.pop(request_id, {"status": "error", "message": "Sub-query returned no result."})
+    result = _result_store.pop(
+        request_id, {"status": "error", "message": "Sub-query returned no result."}
+    )
 
     if isinstance(result, dict):
         status = result.get("status")
@@ -196,13 +198,17 @@ def llm_query(sub_context, instruction=""):
 
 
 def async_llm_query(sub_context, instruction=""):
-    return AwaitableQuery(_subquery_executor.submit(llm_query, sub_context, instruction))
+    return AwaitableQuery(
+        _subquery_executor.submit(llm_query, sub_context, instruction)
+    )
 
 
 def list_files(limit=200, offset=0):
     safe_limit = max(0, min(int(limit), 1000))
     safe_offset = max(0, int(offset))
-    return [PathRef(path) for path in _file_sources[safe_offset : safe_offset + safe_limit]]
+    return [
+        PathRef(path) for path in _file_sources[safe_offset : safe_offset + safe_limit]
+    ]
 
 
 def sample_files(limit=20):
@@ -430,7 +436,9 @@ def open_hit(hit, window=12):
         raise ValueError("hit must be a grep_files() or grep_open() result")
 
     safe_window = max(0, min(int(window), 80))
-    return OpenedHit(hit.path, hit.line, hit.text, _match_preview(hit.path, hit.line, safe_window))
+    return OpenedHit(
+        hit.path, hit.line, hit.text, _match_preview(hit.path, hit.line, safe_window)
+    )
 
 
 def grep_files(pattern, limit=50):
@@ -464,7 +472,14 @@ def grep_open(pattern, limit=10, window=12):
                 text = line.rstrip(chr(10))
                 if compiled.search(line):
                     _evidence["hit_paths"].add(path)
-                    matches.append(OpenedHit(path, number, text, _match_preview(path, number, safe_window)))
+                    matches.append(
+                        OpenedHit(
+                            path,
+                            number,
+                            text,
+                            _match_preview(path, number, safe_window),
+                        )
+                    )
                     if len(matches) >= safe_limit:
                         return matches
 
@@ -691,7 +706,9 @@ def _execute_code(code):
             "syntax_unterminated_triple_quote",
             "syntax_error",
         }:
-            recovery = _recover_from_syntax_error(code, SyntaxError(exec_meta["details"].get("syntax_message", "")))
+            recovery = _recover_from_syntax_error(
+                code, SyntaxError(exec_meta["details"].get("syntax_message", ""))
+            )
 
             if recovery is not None:
                 __final_result__ = recovery["final_value"]
@@ -728,7 +745,11 @@ def _main_loop():
             context = message.get("value", "")
             _write_message({"type": "context_set"})
         elif msg_type == "set_file_sources":
-            _file_sources = [os.path.realpath(path) for path in message.get("paths", []) if isinstance(path, str)]
+            _file_sources = [
+                os.path.realpath(path)
+                for path in message.get("paths", [])
+                if isinstance(path, str)
+            ]
             _file_source_set = set(_file_sources)
             _write_message({"type": "file_sources_set"})
         elif msg_type == "reset_final":
