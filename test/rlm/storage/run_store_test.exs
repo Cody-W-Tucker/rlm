@@ -28,6 +28,7 @@ defmodule Rlm.Storage.RunStoreTest do
     assert File.exists?(path)
 
     saved = path |> File.read!() |> Jason.decode!()
+    assert saved["run_schema_version"] == 1
     assert saved["prompt"] == "What happened?"
     assert saved["mode"] == "one_shot"
     assert saved["context_sources"] == ["inline text"]

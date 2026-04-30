@@ -1,6 +1,10 @@
 defmodule Rlm.Storage.RunStore do
   @moduledoc "Persist completed runs, iteration data, and sub-query metadata to local JSON files."
 
+  @run_schema_version 1
+
+  def run_schema_version, do: @run_schema_version
+
   def persist(result, context_bundle, settings, opts \\ []) do
     File.mkdir_p(settings.storage_dir)
 
@@ -17,6 +21,7 @@ defmodule Rlm.Storage.RunStore do
       )
 
     payload = %{
+      run_schema_version: @run_schema_version,
       prompt: result.prompt,
       status: result.status,
       completed: result.completed?,

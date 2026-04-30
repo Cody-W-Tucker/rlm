@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+
+set -eu
+
+exec env MIX_QUIET=1 mix rlm.post_mortem --json "$@"
