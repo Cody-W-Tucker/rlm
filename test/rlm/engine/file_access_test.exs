@@ -66,6 +66,27 @@ defmodule Rlm.Engine.FileAccessTest do
     assert stdout =~ "beta"
   end
 
+  test "grep_files tolerates tuple-style hit indexing used by the model" do
+    tmp = TestHelpers.temp_dir("rlm-engine-grep-tuple")
+    on_exit(fn -> File.rm_rf!(tmp) end)
+
+    File.write!(Path.join(tmp, "note.txt"), "alpha\nbeta\n")
+    settings = TestHelpers.settings(%{max_iterations: 1})
+
+    assert {:ok, bundle} = Loader.load({:path, Path.join(tmp, "note.txt")}, settings)
+
+    assert {:ok, result} =
+             Engine.run("find beta", bundle, settings, Rlm.TestGrepTupleCompatibilityProvider)
+
+    assert result.completed?
+    assert result.answer =~ "note.txt:2"
+
+    stdout = hd(result.iteration_records).stdout
+    assert stdout =~ "note.txt"
+    assert stdout =~ "2"
+    assert stdout =~ "beta"
+  end
+
   test "grep_open returns preview-ready hit objects" do
     tmp = TestHelpers.temp_dir("rlm-engine-grep-open")
     on_exit(fn -> File.rm_rf!(tmp) end)

@@ -46,13 +46,14 @@ defmodule Rlm.Engine.Prompt.Base do
     - Make scouting goal-directed: look for the content patterns most likely to answer the prompt, such as repeated themes, reflective passages, summaries, decision logs, section headers, or recurring motifs.
     - Do not spend iterations re-deriving filenames or source layout unless the task specifically depends on source structure.
     - For file-backed inputs, first decide whether filename/path structure is informative for this query.
-    - `list_files()` and `sample_files()` return plain path strings. Use `path = files[0]`, not `files[0]['path']`, though both access styles may appear in examples.
+    - `list_files()` and `sample_files()` return path strings. Good: `path = files[0]`. Also tolerated: `path = files[0]['path']`. Do not use `files[0].path`.
     - If filename/path structure is informative, use `sample_files()` or `list_files()` to derive a small candidate set from file shape, then use `peek_file()` and `read_file()` on only the best candidates.
     - If filename/path structure is not informative, use `grep_files()` with high-signal query terms to derive a small candidate set from file contents, or `grep_open()` when you want immediate previews around the best hits.
     - After content search, prefer `peek_hit(hit)` or `open_hit(hit)` over hardcoding paths or slicing large file strings by character count.
     - For large line-delimited files such as `jsonl`, logs, CSV, or TSV, do not treat the whole file as one document. Search first, then inspect small line windows with `peek_file(path, offset=...)` or `read_file(path, offset=..., limit=...)`.
     - For JSONL or chat-history corpora, first inspect the schema with `sample_jsonl()`, then search parsed fields with `grep_jsonl_fields()` before reading targeted windows.
     - Hit objects from `grep_files()`, `grep_open()`, and `grep_jsonl_fields()` expose attributes like `.line`, `.path`, `.text`, `.field`, and `.value`.
+    - Prefer attribute access for hits. Good: `hit.path`, `hit.line`, `hit.text`, `hit.field`, `hit.value`. Also tolerated: `hit['line']`, `hit['field']`, `hit['value']`. Tuple-style indexing like `hit[0]`, `hit[1]` may work for compatibility, but prefer named access when writing fresh code.
     - For multi-file file-backed questions, follow this sequence before finalizing: search, preview, read at least 3 relevant files, then answer.
     - Ground the answer in inspected evidence, but do not force every claim into a `(from /path/to/file)` label.
     - Only name a file when that attribution is specific, verified, and helpful. If a concept is synthesized across multiple notes, say so instead of pinning it to one file.

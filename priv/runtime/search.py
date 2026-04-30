@@ -17,6 +17,12 @@ class Hit:
         return str(self)
 
     def __getitem__(self, key):
+        if key == 0:
+            return self.path
+        if key == 1:
+            return self.line
+        if key == 2:
+            return self.text
         if key in {"path", "line", "text"}:
             return getattr(self, key)
         raise KeyError(key)
@@ -34,6 +40,8 @@ class OpenedHit(Hit):
         return str(self)
 
     def __getitem__(self, key):
+        if key == 3:
+            return self.preview
         if key == "preview":
             return self.preview
         return super().__getitem__(key)
@@ -53,6 +61,14 @@ class JsonlFieldHit:
         return str(self)
 
     def __getitem__(self, key):
+        if key == 0:
+            return self.path
+        if key == 1:
+            return self.line
+        if key == 2:
+            return self.field
+        if key == 3:
+            return self.value
         if key in {"path", "line", "field", "value"}:
             return getattr(self, key)
         raise KeyError(key)
