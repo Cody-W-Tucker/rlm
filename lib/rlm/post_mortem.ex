@@ -191,10 +191,45 @@ defmodule Rlm.PostMortem do
     grounding_categories = grounding_categories(data, run_context)
 
     (failure_categories ++ recovery_categories ++ grounding_categories)
+    |> dedupe_categories()
     |> Enum.uniq_by(fn category ->
       {category.key, category.evidence, Enum.map(category.pointers, fn pointer -> pointer.json_path end)}
     end)
   end
+
+  defp dedupe_categories(categories) do
+    python_exec_errors = Enum.filter(categories, &(&1.key == "python_exec_error"))
+
+    Enum.reject(categories, fn category ->
+      redundant_runtime_exception?(category, python_exec_errors)
+    end)
+  end
+
+  defp redundant_runtime_exception?(%{key: "runtime_exception", run_path: run_path} = category, python_exec_errors) do
+    Enum.any?(python_exec_errors, fn python_exec_error ->
+      python_exec_error.run_path == run_path and
+        (overlapping_runtime_evidence?(category.evidence, python_exec_error.evidence) or
+           overlapping_pointer_values?(category.pointers, ["failed_block_code", "stderr"], python_exec_error.evidence) or
+           Enum.any?(category.pointers, &(&1.anchor_key == "failed_block_code" and is_binary(&1.anchor_value) and &1.anchor_value != "")))
+    end)
+  end
+
+  defp redundant_runtime_exception?(_category, _python_exec_errors), do: false
+
+  defp overlapping_runtime_evidence?(left, right) when is_binary(left) and is_binary(right) do
+    String.contains?(left, right) or String.contains?(right, left)
+  end
+
+  defp overlapping_runtime_evidence?(_left, _right), do: false
+
+  defp overlapping_pointer_values?(pointers, anchor_keys, evidence) when is_binary(evidence) do
+    Enum.any?(pointers, fn pointer ->
+      pointer.anchor_key in anchor_keys and is_binary(pointer.anchor_value) and
+        pointer.anchor_value != "" and String.contains?(evidence, pointer.anchor_value)
+    end)
+  end
+
+  defp overlapping_pointer_values?(_pointers, _anchor_keys, _evidence), do: false
 
   defp failure_category(failure, index, run_context) do
     class = to_string(failure["class"] || "unknown_failure")

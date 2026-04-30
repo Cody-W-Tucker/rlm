@@ -190,6 +190,43 @@ defmodule Rlm.Engine.FixtureRecoveryTest do
     assert failure.message =~ "Aimlessness.md"
   end
 
+  test "recovers from invalid read_file paths by switching back to allowed hits" do
+    tmp = TestHelpers.temp_dir("rlm-engine-invalid-path")
+    on_exit(fn -> File.rm_rf!(tmp) end)
+
+    EngineTestSupport.build_fixture_corpus(tmp)
+    settings = TestHelpers.settings(%{max_iterations: 3})
+
+    assert {:ok, bundle} = Loader.load({:path, tmp}, settings)
+
+    assert {:ok, result} =
+             Engine.run("summarize discipline", bundle, settings, Rlm.TestInvalidPathRecoveryProvider)
+
+    assert result.completed?
+    assert result.answer == "recovered after invalid path"
+    assert length(result.failure_history) == 1
+
+    failure = hd(result.failure_history)
+    assert failure.class == :python_exec_error
+    assert failure.message =~ "path is not in the allowed file set"
+    assert failure.message =~ "pages/Building_Discipline.md"
+  end
+
+  test "recovers after a prose-only provider response produces no executable code" do
+    settings = TestHelpers.settings(%{max_iterations: 3})
+    bundle = %{entries: [], text: "abcdef", bytes: 6}
+
+    assert {:ok, result} = Engine.run("summarize", bundle, settings, Rlm.TestProseRecoveryProvider)
+
+    assert result.completed?
+    assert result.answer == "recovered after prose-only response"
+    assert length(result.failure_history) == 1
+
+    failure = hd(result.failure_history)
+    assert failure.class == :provider_response_error
+    assert failure.message == "Could not extract Python code from provider response."
+  end
+
   test "blocks scout-only finalization on multi-file file-backed runs" do
     tmp = TestHelpers.temp_dir("rlm-engine-grounding-grade")
     on_exit(fn -> File.rm_rf!(tmp) end)

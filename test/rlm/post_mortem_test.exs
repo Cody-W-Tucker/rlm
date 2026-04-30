@@ -121,7 +121,7 @@ defmodule Rlm.PostMortemTest do
     refute Enum.any?(run.improvements, &(&1.key == "force_read_promotion"))
   end
 
-  test "extracts runtime recovery candidates from failing block details" do
+  test "dedupes runtime exception review noise when a python exec failure already captures the same incident" do
     tmp = TestHelpers.temp_dir("rlm-post-mortem-runtime")
     on_exit(fn -> File.rm_rf!(tmp) end)
 
@@ -171,19 +171,19 @@ defmodule Rlm.PostMortemTest do
 
     assert Enum.any?(run.categories, &(&1.key == "python_exec_error"))
 
-    runtime_exception = Enum.find(run.categories, &(&1.key == "runtime_exception"))
     async_wrapper = Enum.find(run.categories, &(&1.key == "async_wrapper"))
     runtime_test = Enum.find(run.tests, &(&1.category == "python_exec_error"))
     runtime_idea = Enum.find(run.improvements, &(&1.key == "fixture_failed_block_code"))
 
-    assert runtime_exception
     assert async_wrapper
-    assert Enum.any?(runtime_exception.pointers, &(&1.json_path == "iteration_records[0].error_kind"))
     assert Enum.any?(async_wrapper.pointers, &(&1.json_path == "iteration_records[0].recovery_kind"))
     assert Enum.any?(async_wrapper.pointers, &(&1.json_path == "iteration_records[0].details.failed_block_code"))
     assert runtime_test
     assert runtime_test.pointers != []
     assert runtime_idea
     assert runtime_idea.pointers != []
+
+    refute Enum.any?(run.categories, &(&1.key == "runtime_exception"))
+    refute Enum.any?(report.review_queue, &(&1.category == "runtime_exception"))
   end
 end

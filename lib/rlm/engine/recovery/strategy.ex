@@ -9,6 +9,8 @@ defmodule Rlm.Engine.Recovery.Strategy do
     case class do
       :async_failed -> Map.merge(base, %{async_disabled: true, broad_subqueries_disabled: true})
       :provider_timeout -> Map.merge(base, %{broad_subqueries_disabled: true})
+      :total_timeout -> Map.merge(base, %{broad_subqueries_disabled: true})
+      :first_byte_timeout -> Map.merge(base, %{broad_subqueries_disabled: true})
       :subquery_budget_exhausted -> Map.merge(base, %{broad_subqueries_disabled: true})
       :subquery_failed -> Map.merge(base, %{broad_subqueries_disabled: true})
       _ -> base
@@ -17,6 +19,14 @@ defmodule Rlm.Engine.Recovery.Strategy do
 
   def recovery_instruction(%Failure{class: :provider_timeout}) do
     "Do not retry the same broad sub-query strategy. Use direct reasoning or one narrow sub-query and finalize early."
+  end
+
+  def recovery_instruction(%Failure{class: :total_timeout}) do
+    "The total request deadline was already exhausted. Do not repeat the same broad strategy; finalize from the best partial answer or do one narrow direct step."
+  end
+
+  def recovery_instruction(%Failure{class: :first_byte_timeout}) do
+    "The provider never started responding. Do not blindly retry the same broad request; simplify it sharply or switch to direct reasoning and finalize early."
   end
 
   def recovery_instruction(%Failure{class: :async_failed}) do
