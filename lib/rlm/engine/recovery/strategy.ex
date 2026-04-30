@@ -42,7 +42,7 @@ defmodule Rlm.Engine.Recovery.Strategy do
   end
 
   def recovery_instruction(%Failure{class: :insufficient_grounding}) do
-    "Do not finalize from scouting alone or from a single read. Keep the introspection from `peek_file()` and `grep_open()`, then promote the strongest candidates to `read_file()` until you have at least 3 relevant reads before finalizing."
+    "Do not finalize from scouting alone or repeated search. Keep the introspection from search/preview, then promote the strongest candidates to `read_file()` or `read_jsonl()` until you have at least 3 relevant files or line windows before finalizing."
   end
 
   def recovery_instruction(_failure) do

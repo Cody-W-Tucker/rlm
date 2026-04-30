@@ -319,7 +319,8 @@ defmodule Rlm.Engine.Iteration do
         iteration + 1
       )
     else
-      {:ok, Finalizer.error_result(prompt, context_bundle, failure, run_state, iteration, records)}
+      {:ok,
+       Finalizer.error_result(prompt, context_bundle, failure, run_state, iteration, records)}
     end
   end
 
@@ -340,7 +341,16 @@ defmodule Rlm.Engine.Iteration do
         end
 
       true ->
-        RuntimeOutcome.classify(exec_result)
+        case RuntimeOutcome.classify(exec_result) do
+          :continue ->
+            case GroundingPolicy.validate_search_progress(context_bundle, iteration_records) do
+              :ok -> :continue
+              {:error, reason} -> {:recoverable_failure, Failure.from_stage(:grounding, reason)}
+            end
+
+          outcome ->
+            outcome
+        end
     end
   end
 

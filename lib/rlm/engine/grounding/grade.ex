@@ -6,7 +6,7 @@ defmodule Rlm.Engine.Grounding.Grade do
   def assess(context_bundle, iteration_records) do
     if Policy.file_backed?(context_bundle) do
       metrics = metrics(iteration_records)
-      level = level(metrics)
+      level = level(context_bundle, metrics)
 
       %{
         grade: grade(level),
@@ -27,7 +27,8 @@ defmodule Rlm.Engine.Grounding.Grade do
         search_count: 0,
         hit_paths: MapSet.new(),
         previewed_files: MapSet.new(),
-        read_files: MapSet.new()
+        read_files: MapSet.new(),
+        read_windows: MapSet.new()
       },
       fn record, acc ->
         evidence = Policy.evidence(Map.get(record, :details) || %{})
@@ -36,7 +37,8 @@ defmodule Rlm.Engine.Grounding.Grade do
           search_count: max(acc.search_count, evidence.search_count),
           hit_paths: merge_paths(acc.hit_paths, evidence.hit_paths),
           previewed_files: merge_paths(acc.previewed_files, evidence.previewed_files),
-          read_files: merge_paths(acc.read_files, evidence.read_files)
+          read_files: merge_paths(acc.read_files, evidence.read_files),
+          read_windows: merge_paths(acc.read_windows, evidence.read_windows)
         }
       end
     )
@@ -45,7 +47,8 @@ defmodule Rlm.Engine.Grounding.Grade do
         search_count: aggregate.search_count,
         hit_paths: MapSet.size(aggregate.hit_paths),
         previewed_files: MapSet.size(aggregate.previewed_files),
-        read_files: MapSet.size(aggregate.read_files)
+        read_files: MapSet.size(aggregate.read_files),
+        read_windows: MapSet.size(aggregate.read_windows)
       }
     end)
   end
@@ -54,10 +57,16 @@ defmodule Rlm.Engine.Grounding.Grade do
     Enum.reduce(paths, existing, &MapSet.put(&2, &1))
   end
 
-  defp level(%{read_files: read_files}) when read_files >= 3,
+  defp level(context_bundle, metrics) do
+    metrics
+    |> Map.put(:read_units, Policy.read_units(context_bundle, metrics))
+    |> level()
+  end
+
+  defp level(%{read_units: read_units}) when read_units >= 3,
     do: :read_backed_multi
 
-  defp level(%{read_files: read_files}) when read_files >= 1,
+  defp level(%{read_units: read_units}) when read_units >= 1,
     do: :read_backed
 
   defp level(%{previewed_files: previewed_files}) when previewed_files >= 1, do: :scout_only
@@ -77,11 +86,11 @@ defmodule Rlm.Engine.Grounding.Grade do
   defp label(:ungrounded), do: "ungrounded"
 
   defp summary(:read_backed_multi, metrics) do
-    "Strong file grounding: read #{metrics.read_files} files after scouting #{metrics.previewed_files} previews and #{metrics.search_count} search rounds."
+    "Strong file grounding: read #{metrics.read_files} file(s) and #{metrics.read_windows} targeted window(s) after scouting #{metrics.previewed_files} previews and #{metrics.search_count} search rounds."
   end
 
   defp summary(:read_backed, metrics) do
-    "Limited file grounding: read #{metrics.read_files} file(s) after scouting #{metrics.previewed_files} previews and #{metrics.search_count} search rounds."
+    "Limited file grounding: read #{metrics.read_files} file(s) and #{metrics.read_windows} targeted window(s) after scouting #{metrics.previewed_files} previews and #{metrics.search_count} search rounds."
   end
 
   defp summary(:scout_only, _metrics) do

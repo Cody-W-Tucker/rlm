@@ -77,7 +77,7 @@ defmodule Rlm.Engine.Prompt.IterationFeedback do
     evidence = GroundingPolicy.evidence(exec_result.details || %{})
 
     if evidence.search_count >= 3 do
-      "You have already done multiple search rounds. Stop expanding search, choose the strongest inspected evidence, and finalize from that small working set."
+      "You have already done multiple search rounds. Stop expanding search; promote the strongest hits into targeted `read_file()` or `read_jsonl()` windows, then finalize from that small working set."
     else
       nil
     end
@@ -91,8 +91,12 @@ defmodule Rlm.Engine.Prompt.IterationFeedback do
       %{grade: grade, level: :search_only} ->
         "Current grounding grade: #{grade} (search-only). You have searched for patterns but haven't directly inspected what the files actually contain. Stop searching. Pick the most promising files from your hits, preview them with `peek_hit()` or `peek_file()`, then promote at least 3 to targeted `read_file()` windows before finalizing."
 
-      %{grade: grade, level: :read_backed, metrics: %{read_files: read_files}} ->
-        "Current grounding grade: #{grade} (limited read-backed). You have only read #{read_files} file(s). For a multi-file corpus, keep the working set small, but read targeted windows from at least 3 relevant files before finalizing."
+      %{
+        grade: grade,
+        level: :read_backed,
+        metrics: %{read_files: read_files, read_windows: windows}
+      } ->
+        "Current grounding grade: #{grade} (limited read-backed). You have read #{read_files} file(s) and #{windows} targeted window(s). Keep the working set small, but promote at least 3 relevant files or line windows before finalizing."
 
       %{grade: grade, label: label, summary: summary} ->
         "Current grounding grade: #{grade} (#{label}). #{summary}"

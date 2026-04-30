@@ -599,6 +599,48 @@ defmodule Rlm.TestJsonlCompatibilityProvider do
   end
 end
 
+defmodule Rlm.TestJsonlSearchPromotionProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(history, _system_prompt, _settings) do
+    if Enum.any?(history, &String.contains?(&1.content, "Stop expanding search")) do
+      {:ok,
+       %{
+         text: """
+         ```python
+         path = list_files()[0]
+         hits = grep_jsonl_fields(path, r"messages\[[0-9]+\]\.content", r"alpha|beta|gamma", limit=3)
+         records = [read_jsonl(path, offset=hit.line, limit=1) for hit in hits]
+         print(records)
+         FINAL("Recovered from promoted JSONL windows")
+         ```
+         """,
+         input_tokens: 0,
+         output_tokens: 0
+       }}
+    else
+      {:ok,
+       %{
+         text: """
+         ```python
+         path = list_files()[0]
+         alpha = grep_jsonl_fields(path, r".*", r"alpha", limit=5)
+         beta = grep_jsonl_fields(path, r".*", r"beta", limit=5)
+         gamma = grep_jsonl_fields(path, r".*", r"gamma", limit=5)
+         print(alpha, beta, gamma)
+         ```
+         """,
+         input_tokens: 0,
+         output_tokens: 0
+       }}
+    end
+  end
+
+  def complete_subquery(_sub_context, _instruction, _settings) do
+    {:ok, %{text: "unused", input_tokens: 0, output_tokens: 0}}
+  end
+end
+
 defmodule Rlm.TestEvidenceTrackingProvider do
   @behaviour Rlm.Providers.Provider
 

@@ -13,11 +13,13 @@ def parse_jsonl_line(line):
         return None, str(error)
 
 
-def jsonl_window(path, offset, limit):
+def jsonl_window(path, offset, limit, track_read=True):
     normalized = state.normalize_allowed_path(path)
     safe_offset = max(1, int(offset))
     safe_limit = max(1, min(int(limit), 500))
-    state.evidence["read_files"].add(normalized)
+
+    if track_read:
+        state.record_read_window(normalized, safe_offset, safe_limit)
 
     records = []
 
@@ -44,7 +46,7 @@ def sample_jsonl(path, limit=20):
         return []
 
     if safe_limit >= total_lines:
-        return jsonl_window(normalized, 1, total_lines)
+        return jsonl_window(normalized, 1, total_lines, track_read=False)
 
     if safe_limit == 1:
         offsets = [1]
@@ -62,7 +64,7 @@ def sample_jsonl(path, limit=20):
     seen_lines = set()
 
     for offset in offsets:
-        for item in jsonl_window(normalized, offset, 1):
+        for item in jsonl_window(normalized, offset, 1, track_read=False):
             if item["line"] not in seen_lines:
                 seen_lines.add(item["line"])
                 records.append(item)

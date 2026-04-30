@@ -41,6 +41,7 @@ defmodule Rlm.Engine.FileAccessTest do
     assert evidence["search_count"] >= 1
     assert length(evidence["previewed_files"]) >= 1
     assert length(evidence["read_files"]) >= 3
+    assert length(evidence["read_windows"]) >= 3
     assert length(evidence["hit_paths"]) >= 1
   end
 
@@ -155,7 +156,8 @@ defmodule Rlm.Engine.FileAccessTest do
     tmp = TestHelpers.temp_dir("rlm-engine-large-window")
     on_exit(fn -> File.rm_rf!(tmp) end)
 
-    lines = Enum.map_join(1..1_000, "\n", fn index -> Jason.encode!(%{"row" => index}) end) <> "\n"
+    lines =
+      Enum.map_join(1..1_000, "\n", fn index -> Jason.encode!(%{"row" => index}) end) <> "\n"
 
     File.write!(Path.join(tmp, "events.jsonl"), lines)
     settings = TestHelpers.settings(%{max_iterations: 1})
@@ -163,7 +165,12 @@ defmodule Rlm.Engine.FileAccessTest do
     assert {:ok, bundle} = Loader.load({:path, Path.join(tmp, "events.jsonl")}, settings)
 
     assert {:ok, result} =
-             Engine.run("inspect tail window", bundle, settings, Rlm.TestLargeOffsetFileAccessProvider)
+             Engine.run(
+               "inspect tail window",
+               bundle,
+               settings,
+               Rlm.TestLargeOffsetFileAccessProvider
+             )
 
     assert result.completed?
     assert result.answer == "999: {\"row\":999}\n1000: {\"row\":1000}"

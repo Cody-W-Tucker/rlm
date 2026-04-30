@@ -11,6 +11,7 @@ evidence = {
     "hit_paths": set(),
     "previewed_files": set(),
     "read_files": set(),
+    "read_windows": set(),
 }
 
 
@@ -64,6 +65,7 @@ def evidence_snapshot():
         "hit_paths": sorted(evidence["hit_paths"]),
         "previewed_files": sorted(evidence["previewed_files"]),
         "read_files": sorted(evidence["read_files"]),
+        "read_windows": sorted(evidence["read_windows"]),
     }
 
 
@@ -74,4 +76,10 @@ def reset_tracking():
         "hit_paths": set(),
         "previewed_files": set(),
         "read_files": set(),
+        "read_windows": set(),
     }
+
+
+def record_read_window(path, offset, limit):
+    evidence["read_files"].add(path)
+    evidence["read_windows"].add(f"{path}:{offset}:{limit}")

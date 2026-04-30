@@ -51,7 +51,7 @@ def read_file(path, offset=1, limit=200):
     safe_offset = max(1, int(offset))
     safe_limit = max(1, min(int(limit), 1000))
 
-    state.evidence["read_files"].add(normalized)
+    state.record_read_window(normalized, safe_offset, safe_limit)
 
     return read_file_lines(normalized, safe_offset, safe_limit)
 

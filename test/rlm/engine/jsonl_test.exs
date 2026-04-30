@@ -11,9 +11,20 @@ defmodule Rlm.Engine.JsonlTest do
 
     lines =
       [
-        %{"messages" => [%{"role" => "user", "content" => "please review this change"}], "source" => "cursor"},
-        %{"messages" => [%{"role" => "user", "content" => "I prefer async def with await and asyncio.gather"}], "source" => "cursor"},
-        %{"messages" => [%{"role" => "user", "content" => "use Semaphore to cap concurrency"}], "source" => "cursor"}
+        %{
+          "messages" => [%{"role" => "user", "content" => "please review this change"}],
+          "source" => "cursor"
+        },
+        %{
+          "messages" => [
+            %{"role" => "user", "content" => "I prefer async def with await and asyncio.gather"}
+          ],
+          "source" => "cursor"
+        },
+        %{
+          "messages" => [%{"role" => "user", "content" => "use Semaphore to cap concurrency"}],
+          "source" => "cursor"
+        }
       ]
       |> Enum.map_join("\n", &Jason.encode!/1)
       |> Kernel.<>("\n")
@@ -24,7 +35,12 @@ defmodule Rlm.Engine.JsonlTest do
     assert {:ok, bundle} = Loader.load({:path, Path.join(tmp, "history.jsonl")}, settings)
 
     assert {:ok, result} =
-             Engine.run("extract coding style evidence", bundle, settings, Rlm.TestJsonlRetrievalProvider)
+             Engine.run(
+               "extract coding style evidence",
+               bundle,
+               settings,
+               Rlm.TestJsonlRetrievalProvider
+             )
 
     assert result.completed?
     assert result.answer =~ "messages[0].content"
@@ -42,8 +58,14 @@ defmodule Rlm.Engine.JsonlTest do
 
     lines =
       [
-        %{"messages" => [%{"role" => "user", "content" => "plain request"}], "source" => "cursor"},
-        %{"messages" => [%{"role" => "user", "content" => "I prefer async def with await"}], "source" => "cursor"}
+        %{
+          "messages" => [%{"role" => "user", "content" => "plain request"}],
+          "source" => "cursor"
+        },
+        %{
+          "messages" => [%{"role" => "user", "content" => "I prefer async def with await"}],
+          "source" => "cursor"
+        }
       ]
       |> Enum.map_join("\n", &Jason.encode!/1)
       |> Kernel.<>("\n")
@@ -63,5 +85,45 @@ defmodule Rlm.Engine.JsonlTest do
     assert stdout =~ "history.jsonl"
     assert stdout =~ "messages[0].content"
     assert stdout =~ "async def with await"
+  end
+
+  test "repeated JSONL search must promote hits into targeted read windows" do
+    tmp = TestHelpers.temp_dir("rlm-engine-jsonl-promotion")
+    on_exit(fn -> File.rm_rf!(tmp) end)
+
+    lines =
+      [
+        %{"messages" => [%{"role" => "user", "content" => "alpha decision evidence"}]},
+        %{"messages" => [%{"role" => "user", "content" => "beta learning evidence"}]},
+        %{"messages" => [%{"role" => "user", "content" => "gamma adaptation evidence"}]}
+      ]
+      |> Enum.map_join("\n", &Jason.encode!/1)
+      |> Kernel.<>("\n")
+
+    File.write!(Path.join(tmp, "history.jsonl"), lines)
+    settings = TestHelpers.settings(%{max_iterations: 2})
+
+    assert {:ok, bundle} = Loader.load({:path, Path.join(tmp, "history.jsonl")}, settings)
+
+    assert {:ok, result} =
+             Engine.run(
+               "extract grounded profile evidence",
+               bundle,
+               settings,
+               Rlm.TestJsonlSearchPromotionProvider
+             )
+
+    assert result.completed?
+    assert result.answer == "Recovered from promoted JSONL windows"
+    assert result.iterations == 2
+    assert result.grounding.grade == "A"
+    assert result.grounding.metrics.read_windows >= 3
+
+    [first, second] = result.iteration_records
+    refute first.has_final
+    assert is_nil(first.final_value)
+    assert get_in(first, [:details, "evidence", "search_count"]) == 3
+    assert get_in(first, [:details, "evidence", "read_windows"]) == []
+    assert length(get_in(second, [:details, "evidence", "read_windows"])) >= 3
   end
 end

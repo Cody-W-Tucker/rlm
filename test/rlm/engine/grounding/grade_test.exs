@@ -53,4 +53,29 @@ defmodule Rlm.Engine.Grounding.GradeTest do
   test "returns nil for non file-backed runs" do
     assert Grade.assess(%{lazy_entries: []}, []) == nil
   end
+
+  test "counts targeted windows for single line-delimited sources" do
+    bundle = %{lazy_entries: [%{label: "/tmp/history.jsonl"}]}
+
+    records = [
+      %{
+        details: %{
+          "evidence" => %{
+            "search_count" => 3,
+            "hit_paths" => ["/tmp/history.jsonl"],
+            "previewed_files" => [],
+            "read_files" => ["/tmp/history.jsonl"],
+            "read_windows" => [
+              "/tmp/history.jsonl:1:1",
+              "/tmp/history.jsonl:7:1",
+              "/tmp/history.jsonl:12:1"
+            ]
+          }
+        }
+      }
+    ]
+
+    assert %{grade: "A", level: :read_backed_multi, metrics: %{read_windows: 3}} =
+             Grade.assess(bundle, records)
+  end
 end
