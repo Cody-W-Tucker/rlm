@@ -641,6 +641,37 @@ defmodule Rlm.TestJsonlSearchPromotionProvider do
   end
 end
 
+defmodule Rlm.TestAssessEvidenceProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(_history, _system_prompt, _settings) do
+    {:ok,
+     %{
+       text: """
+       ```python
+       path = list_files()[0]
+       hits = grep_jsonl_fields(path, r"messages\[[0-9]+\]\.content", r"start with|scope", limit=3)
+       records = [read_jsonl(path, offset=hit.line, limit=1) for hit in hits[:2]]
+       report = assess_evidence(
+           question="How does the user scope complex tasks?",
+           hits=hits,
+           reads=records,
+           hypothesis="The user narrows scope first, then checks for exceptions."
+       )
+       print(report)
+       FINAL(report["next_action"] + "|" + str(len(report["suggested_reads"])))
+       ```
+       """,
+       input_tokens: 0,
+       output_tokens: 0
+     }}
+  end
+
+  def complete_subquery(_sub_context, _instruction, _settings) do
+    {:ok, %{text: "unused", input_tokens: 0, output_tokens: 0}}
+  end
+end
+
 defmodule Rlm.TestEvidenceTrackingProvider do
   @behaviour Rlm.Providers.Provider
 

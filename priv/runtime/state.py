@@ -122,6 +122,13 @@ def reset_tracking():
     read_followup_keys = set()
 
 
+def hit_registry_snapshot():
+    return {
+        path: [dict(item) for item in sorted(items, key=lambda item: item["line"])]
+        for path, items in hit_registry.items()
+    }
+
+
 def classify_search_kind(pattern):
     normalized = str(pattern or "")
 

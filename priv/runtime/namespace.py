@@ -1,4 +1,5 @@
 from runtime import files
+from runtime import evidence
 from runtime import jsonl
 from runtime import protocol
 from runtime import search
@@ -30,6 +31,7 @@ def refresh_user_ns():
             "grep_files": search.grep_files,
             "grep_open": search.grep_open,
             "grep_jsonl_fields": jsonl.grep_jsonl_fields,
+            "assess_evidence": evidence.assess_evidence,
             "peek_hit": search.peek_hit,
             "open_hit": search.open_hit,
             "llm_query": protocol.llm_query,

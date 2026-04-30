@@ -126,4 +126,39 @@ defmodule Rlm.Engine.JsonlTest do
     assert get_in(first, [:details, "evidence", "read_windows"]) == []
     assert length(get_in(second, [:details, "evidence", "read_windows"])) >= 3
   end
+
+  test "assess_evidence recommends the next convergence step" do
+    tmp = TestHelpers.temp_dir("rlm-engine-jsonl-assess-evidence")
+    on_exit(fn -> File.rm_rf!(tmp) end)
+
+    lines =
+      [
+        %{"messages" => [%{"role" => "user", "content" => "start with the smallest version first"}]},
+        %{"messages" => [%{"role" => "user", "content" => "however, sometimes a direct answer is enough"}]},
+        %{"messages" => [%{"role" => "user", "content" => "scope the problem before adding more steps"}]}
+      ]
+      |> Enum.map_join("\n", &Jason.encode!/1)
+      |> Kernel.<>("\n")
+
+    File.write!(Path.join(tmp, "history.jsonl"), lines)
+    settings = TestHelpers.settings(%{max_iterations: 1})
+
+    assert {:ok, bundle} = Loader.load({:path, Path.join(tmp, "history.jsonl")}, settings)
+
+    assert {:ok, result} =
+             Engine.run(
+               "assess convergence state",
+               bundle,
+               settings,
+               Rlm.TestAssessEvidenceProvider
+             )
+
+    assert result.completed?
+    assert result.answer == "run_contradiction_search|0"
+
+    stdout = hd(result.iteration_records).stdout
+    assert stdout =~ "support_summary"
+    assert stdout =~ "suggested_reads"
+    assert stdout =~ "next_action"
+  end
 end

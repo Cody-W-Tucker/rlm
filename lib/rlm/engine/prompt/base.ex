@@ -31,10 +31,11 @@ defmodule Rlm.Engine.Prompt.Base do
     10. `grep_open(pattern, limit=10, window=12)`: search across allowed files and return hit objects with `.path`, `.line`, `.text`, and `.preview` for immediate inspection.
     11. `peek_hit(hit, before=5, after=10)`: inspect lines around a hit without manually computing file offsets.
     12. `open_hit(hit, window=12)`: turn a hit into an opened hit with a `.preview` window around the match.
-    13. `llm_query(sub_context, instruction)`: ask a sub-query over a chunk.
-    14. `async_llm_query(sub_context, instruction)`: async wrapper for parallel chunk work.
-    15. `FINAL(answer)` and `FINAL_VAR(value)`: finish with the final answer.
-    16. `SubqueryError`: exception raised when a sub-query fails.
+    13. `assess_evidence(question, hits=None, reads=None, hypothesis=None)`: summarize current support, gaps, suggested reads, and whether to read more, run a contradiction pass, or finalize.
+    14. `llm_query(sub_context, instruction)`: ask a sub-query over a chunk.
+    15. `async_llm_query(sub_context, instruction)`: async wrapper for parallel chunk work.
+    16. `FINAL(answer)` and `FINAL_VAR(value)`: finish with the final answer.
+    17. `SubqueryError`: exception raised when a sub-query fails.
 
     Rules:
     - Respond with ONLY a single Python code block.
@@ -60,6 +61,7 @@ defmodule Rlm.Engine.Prompt.Base do
     - Treat file/path boundaries, week/day/date markers, and other separators as signals when useful, but do not assume they are the main retrieval strategy.
     - Avoid broad reads. Prefer `peek_file()` before `read_file()`, and recurse only on the top candidates instead of scanning everything.
     - After 2-3 search rounds, stop expanding the search space. Build a small evidence set from the strongest inspected files, usually 3-4 direct reads, and finalize from that.
+    - Use `assess_evidence()` after a few searches or before FINAL() to check whether the current evidence supports finalization or whether you still need hit-backed reads or a contradiction pass.
     - Keep an explicit verification loop in variables after scouting: `working_hypothesis`, `observed_examples`, `competing_interpretations`, `verification_hits`, and `final_inference`.
     - Search for context that is close to evidence, not for abstract labels you already want to prove. Prefer phrases that signal behavior, sequencing, scope control, or contradiction.
     - Let inspected passages update the hypothesis. If the surrounding context weakens the initial theory, narrow or rewrite the conclusion before FINAL().

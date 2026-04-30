@@ -26,4 +26,12 @@ defmodule Rlm.Engine.RecoveryStrategyTest do
     assert Strategy.recovery_instruction(%Failure{class: :first_byte_timeout}) =~
              "never started responding"
   end
+
+  test "insufficient grounding recovery points the model to assess_evidence" do
+    instruction = Strategy.recovery_instruction(%Failure{class: :insufficient_grounding})
+
+    assert instruction =~ "`assess_evidence()`"
+    assert instruction =~ "current hits, reads, and working hypothesis"
+    assert instruction =~ "read more, run a contradiction pass, or finalize"
+  end
 end

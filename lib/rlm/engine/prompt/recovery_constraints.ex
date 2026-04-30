@@ -5,7 +5,7 @@ defmodule Rlm.Engine.Prompt.RecoveryConstraints do
     [
       if(recovery_flags.recovery_mode,
         do:
-          "- Recovery mode is active. Prefer direct reasoning or one narrow sub-query, then finalize with the best available answer.",
+          "- Recovery mode is active. Prefer direct reasoning or one narrow sub-query. If you have already searched or read, call `assess_evidence()` to choose the next best move before deciding whether to read more or finalize.",
         else: nil
       ),
       if(recovery_flags.async_disabled,

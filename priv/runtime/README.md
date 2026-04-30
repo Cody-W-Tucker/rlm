@@ -46,6 +46,7 @@ Main message types:
 - `read_file`, `peek_file`
 - `grep_files`, `grep_open`, `peek_hit`, `open_hit`
 - `read_jsonl`, `sample_jsonl`, `grep_jsonl_fields`
+- `assess_evidence`
 - `llm_query`, `async_llm_query`
 - `FINAL`, `FINAL_VAR`
 

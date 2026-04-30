@@ -78,10 +78,10 @@ defmodule Rlm.Engine.Prompt.IterationFeedback do
 
     cond do
       evidence.search_count >= 3 and evidence.read_followups == [] ->
-        "You have already done multiple search rounds. Stop expanding search; promote the strongest hit lines into targeted `read_file()` or `read_jsonl()` windows, update your working hypothesis from those passages, then run one contradiction check before finalizing."
+        "You have already done multiple search rounds. Stop expanding search; promote the strongest hit lines into targeted `read_file()` or `read_jsonl()` windows, update your working hypothesis from those passages, call `assess_evidence()` if you need a convergence check, then run one contradiction check before finalizing."
 
       evidence.search_count >= 3 ->
-        "You already have search hits and at least one read tied to them. Use those passages to refine `observed_examples`, note one competing interpretation, run one contradiction check if you have not already, then finalize from that small working set."
+        "You already have search hits and at least one read tied to them. Use those passages to refine `observed_examples`, note one competing interpretation, call `assess_evidence()` if you need the next best move, run one contradiction check if you have not already, then finalize from that small working set."
 
       true ->
         nil
