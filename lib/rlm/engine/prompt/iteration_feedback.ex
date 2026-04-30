@@ -76,30 +76,35 @@ defmodule Rlm.Engine.Prompt.IterationFeedback do
   defp consolidation_note(exec_result) do
     evidence = GroundingPolicy.evidence(exec_result.details || %{})
 
-    if evidence.search_count >= 3 do
-      "You have already done multiple search rounds. Stop expanding search; promote the strongest hits into targeted `read_file()` or `read_jsonl()` windows, then finalize from that small working set."
-    else
-      nil
+    cond do
+      evidence.search_count >= 3 and evidence.read_followups == [] ->
+        "You have already done multiple search rounds. Stop expanding search; promote the strongest hit lines into targeted `read_file()` or `read_jsonl()` windows, update your working hypothesis from those passages, then run one contradiction check before finalizing."
+
+      evidence.search_count >= 3 ->
+        "You already have search hits and at least one read tied to them. Use those passages to refine `observed_examples`, note one competing interpretation, run one contradiction check if you have not already, then finalize from that small working set."
+
+      true ->
+        nil
     end
   end
 
   defp grounding_note(exec_result, context_bundle) do
     case Grade.assess(context_bundle, [%{details: exec_result.details || %{}}]) do
       %{grade: grade, level: :scout_only} ->
-        "Current grounding grade: #{grade} (scout-only). The previews and grep hits are useful for high-value introspection, but promote the strongest candidates to targeted `read_file()` windows and read at least 3 relevant files before finalizing an evidence-heavy answer."
+        "Current grounding grade: #{grade} (scout-only). The previews and grep hits are useful for high-value introspection, but promote the strongest behavioral or contradiction candidates to targeted `read_file()` windows and read at least 3 relevant files before finalizing an evidence-heavy answer."
 
       %{grade: grade, level: :search_only} ->
-        "Current grounding grade: #{grade} (search-only). You have searched for patterns but haven't directly inspected what the files actually contain. Stop searching. Pick the most promising files from your hits, preview them with `peek_hit()` or `peek_file()`, then promote at least 3 to targeted `read_file()` windows before finalizing."
+        "Current grounding grade: #{grade} (search-only). You have searched for patterns but haven't directly inspected what the files actually contain. Stop searching. Pick the most promising behavioral or contradiction hits, preview them with `peek_hit()` or `peek_file()`, then promote at least 3 to targeted `read_file()` windows before finalizing."
 
       %{
         grade: grade,
         level: :read_backed,
         metrics: %{read_files: read_files, read_windows: windows}
       } ->
-        "Current grounding grade: #{grade} (limited read-backed). You have read #{read_files} file(s) and #{windows} targeted window(s). Keep the working set small, but promote at least 3 relevant files or line windows before finalizing."
+        "Current grounding grade: #{grade} (limited read-backed). You have read #{read_files} file(s) and #{windows} targeted window(s). Keep the working set small, but make sure the next reads follow strong hits or nearby examples, update your hypothesis, and check one competing interpretation before finalizing."
 
-      %{grade: grade, label: label, summary: summary} ->
-        "Current grounding grade: #{grade} (#{label}). #{summary}"
+      %{grade: grade, label: label, summary: summary, semantic: semantic} ->
+        "Current grounding grade: #{grade} (#{label}). #{summary} Semantic grounding: #{semantic.grade} (#{semantic.label}). #{semantic.summary}"
 
       nil ->
         nil

@@ -91,7 +91,7 @@ def grep_jsonl_fields(path, field_pattern, text_pattern=".*", limit=20):
     compiled_text = re.compile(text_pattern)
     safe_limit = max(1, min(int(limit), 200))
     matches = []
-    state.evidence["search_patterns"].append(f"jsonl:{field_pattern}::{text_pattern}")
+    query = state.record_search(f"jsonl:{field_pattern}::{text_pattern}", "grep_jsonl_fields")
 
     with open(normalized, "r", encoding="utf-8") as handle:
         for number, line in enumerate(handle, start=1):
@@ -103,7 +103,18 @@ def grep_jsonl_fields(path, field_pattern, text_pattern=".*", limit=20):
             for field, value in iter_json_scalar_fields(record):
                 if compiled_field.search(field) and compiled_text.search(value):
                     state.evidence["hit_paths"].add(normalized)
-                    matches.append(JsonlFieldHit(normalized, number, field, value))
+                    state.register_hit(query, normalized, number, f"{field}={value}")
+                    matches.append(
+                        JsonlFieldHit(
+                            normalized,
+                            number,
+                            field,
+                            value,
+                            query_id=query["id"],
+                            query_kind=query["kind"],
+                            query_pattern=query["pattern"],
+                        )
+                    )
                     break
 
             if len(matches) >= safe_limit:

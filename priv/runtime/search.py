@@ -5,10 +5,13 @@ from runtime import state
 
 
 class Hit:
-    def __init__(self, path, line, text):
+    def __init__(self, path, line, text, query_id=None, query_kind=None, query_pattern=None):
         self.path = path
         self.line = line
         self.text = text
+        self.query_id = query_id
+        self.query_kind = query_kind
+        self.query_pattern = query_pattern
 
     def __str__(self):
         return f"{self.path}:{self.line}: {self.text}"
@@ -29,8 +32,8 @@ class Hit:
 
 
 class OpenedHit(Hit):
-    def __init__(self, path, line, text, preview):
-        super().__init__(path, line, text)
+    def __init__(self, path, line, text, preview, query_id=None, query_kind=None, query_pattern=None):
+        super().__init__(path, line, text, query_id, query_kind, query_pattern)
         self.preview = preview
 
     def __str__(self):
@@ -48,11 +51,14 @@ class OpenedHit(Hit):
 
 
 class JsonlFieldHit:
-    def __init__(self, path, line, field, value):
+    def __init__(self, path, line, field, value, query_id=None, query_kind=None, query_pattern=None):
         self.path = path
         self.line = line
         self.field = field
         self.value = value
+        self.query_id = query_id
+        self.query_kind = query_kind
+        self.query_pattern = query_pattern
 
     def __str__(self):
         return f"{self.path}:{self.line}: {self.field}={self.value}"
@@ -104,14 +110,25 @@ def grep_files(pattern, limit=50):
     compiled = re.compile(pattern)
     safe_limit = max(1, min(int(limit), 500))
     matches = []
-    state.evidence["search_patterns"].append(pattern)
+    query = state.record_search(pattern, "grep_files")
 
     for path in state.get_file_sources():
         with open(path, "r", encoding="utf-8") as handle:
             for number, line in enumerate(handle, start=1):
                 if compiled.search(line):
                     state.evidence["hit_paths"].add(path)
-                    matches.append(Hit(path, number, line.rstrip(chr(10))))
+                    text = line.rstrip(chr(10))
+                    state.register_hit(query, path, number, text)
+                    matches.append(
+                        Hit(
+                            path,
+                            number,
+                            text,
+                            query_id=query["id"],
+                            query_kind=query["kind"],
+                            query_pattern=query["pattern"],
+                        )
+                    )
                     if len(matches) >= safe_limit:
                         return matches
 
@@ -123,7 +140,7 @@ def grep_open(pattern, limit=10, window=12):
     safe_limit = max(1, min(int(limit), 200))
     safe_window = max(0, min(int(window), 80))
     matches = []
-    state.evidence["search_patterns"].append(pattern)
+    query = state.record_search(pattern, "grep_open")
 
     for path in state.get_file_sources():
         with open(path, "r", encoding="utf-8") as handle:
@@ -131,8 +148,17 @@ def grep_open(pattern, limit=10, window=12):
                 text = line.rstrip(chr(10))
                 if compiled.search(line):
                     state.evidence["hit_paths"].add(path)
+                    state.register_hit(query, path, number, text)
                     matches.append(
-                        OpenedHit(path, number, text, match_preview(path, number, safe_window))
+                        OpenedHit(
+                            path,
+                            number,
+                            text,
+                            match_preview(path, number, safe_window),
+                            query_id=query["id"],
+                            query_kind=query["kind"],
+                            query_pattern=query["pattern"],
+                        )
                     )
                     if len(matches) >= safe_limit:
                         return matches

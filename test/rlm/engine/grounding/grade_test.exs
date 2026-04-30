@@ -47,7 +47,8 @@ defmodule Rlm.Engine.Grounding.GradeTest do
 
     assert %{grade: "C", level: :scout_only} = Grade.assess(bundle, scout_only)
     assert %{grade: "B", level: :read_backed} = Grade.assess(bundle, read_backed)
-    assert %{grade: "A", level: :read_backed_multi} = Grade.assess(bundle, strong_read_backed)
+    assert %{grade: "A", level: :read_backed_multi, semantic: %{grade: "D"}} =
+             Grade.assess(bundle, strong_read_backed)
   end
 
   test "returns nil for non file-backed runs" do
@@ -76,6 +77,34 @@ defmodule Rlm.Engine.Grounding.GradeTest do
     ]
 
     assert %{grade: "A", level: :read_backed_multi, metrics: %{read_windows: 3}} =
+             Grade.assess(bundle, records)
+  end
+
+  test "semantic grounding improves when reads follow matched passages and contradictions" do
+    bundle = %{lazy_entries: [%{label: "/tmp/history.jsonl"}]}
+
+    records = [
+      %{
+        details: %{
+          "evidence" => %{
+            "search_count" => 3,
+            "search_queries" => [
+              %{"id" => 1, "kind" => "behavioral", "pattern" => "start with", "source" => "grep_files"},
+              %{"id" => 2, "kind" => "contradiction", "pattern" => "however", "source" => "grep_files"}
+            ],
+            "hit_paths" => ["/tmp/history.jsonl"],
+            "read_files" => ["/tmp/history.jsonl"],
+            "read_windows" => ["/tmp/history.jsonl:10:2", "/tmp/history.jsonl:20:1", "/tmp/history.jsonl:30:1"],
+            "read_followups" => [
+              %{"path" => "/tmp/history.jsonl", "line" => 10, "pattern" => "start with", "query_kind" => "behavioral", "text" => "start with a narrow example"},
+              %{"path" => "/tmp/history.jsonl", "line" => 20, "pattern" => "however", "query_kind" => "contradiction", "text" => "however sometimes the scope expands"}
+            ]
+          }
+        }
+      }
+    ]
+
+    assert %{semantic: %{grade: "A", level: :verified_with_challenge}} =
              Grade.assess(bundle, records)
   end
 end

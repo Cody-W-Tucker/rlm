@@ -30,6 +30,7 @@ defmodule Rlm.Engine.PolicyTest do
     assert metadata =~ "Grounding hint: Base the final answer on direct inspection of the files"
     assert metadata =~ "targeted `read_file()` windows count as inspected evidence"
     assert metadata =~ "Prefer verified claims from inspected files over path-heavy attribution"
+    assert metadata =~ "Search for concrete behavioral markers, local examples, and contradictions"
     assert metadata =~ "Metadata budget: constant-size summary only"
     refute metadata =~ "/tmp/Week-09-2025.md"
     refute metadata =~ "First 20 files"
@@ -55,6 +56,7 @@ defmodule Rlm.Engine.PolicyTest do
     assert metadata =~ "Likely line-delimited structured records such as JSONL or event/chat history."
     assert metadata =~ "Discover what is actually there"
     assert metadata =~ "hunting for keywords"
+    assert metadata =~ "contradiction check"
   end
 
   test "system prompt requires scouting before chunking" do
@@ -77,7 +79,7 @@ defmodule Rlm.Engine.PolicyTest do
     assert prompt =~ "After 2-3 search rounds, stop expanding the search space"
 
     assert prompt =~
-             "look for the content patterns most likely to answer the prompt"
+             "look for the concrete content patterns most likely to answer the prompt"
 
     assert prompt =~ "Make scouting goal-directed"
     assert prompt =~ "Do not spend iterations re-deriving filenames"
@@ -90,8 +92,8 @@ defmodule Rlm.Engine.PolicyTest do
     assert prompt =~ "`read_jsonl(path, offset=1, limit=20)`"
     assert prompt =~ "`sample_jsonl(path, limit=20)`"
     assert prompt =~ "`grep_jsonl_fields(path, field_pattern, text_pattern=\".*\", limit=20)`"
-    assert prompt =~ "use `grep_files()` with high-signal query terms"
-    assert prompt =~ "`grep_open()` when you want immediate previews"
+    assert prompt =~ "search for concrete behavioral markers, local examples, and contradiction cues"
+    assert prompt =~ "`grep_open(pattern, limit=10, window=12)`"
     assert prompt =~ "prefer `peek_hit(hit)` or `open_hit(hit)`"
     assert prompt =~ "For large line-delimited files such as `jsonl`, logs, CSV, or TSV"
     assert prompt =~ "For JSONL or chat-history corpora, first inspect the schema with `sample_jsonl()`"
@@ -104,8 +106,11 @@ defmodule Rlm.Engine.PolicyTest do
     assert prompt =~ "do not force every claim into a `(from /path/to/file)` label"
     assert prompt =~ "If a concept is synthesized across multiple notes, say so"
     assert prompt =~ "Prefer `peek_file()` before `read_file()`"
-    assert prompt =~ "search, preview, read at least 3 relevant files, then answer"
+    assert prompt =~ "search behavioral markers, read surrounding passages, form a working hypothesis"
     assert prompt =~ "usually 3-4 direct reads"
+    assert prompt =~ "Keep an explicit verification loop in variables"
+    assert prompt =~ "Search for context that is close to evidence"
+    assert prompt =~ "Let inspected passages update the hypothesis"
     assert prompt =~ "prefer a brief structured evidence pass first"
 
     assert prompt =~

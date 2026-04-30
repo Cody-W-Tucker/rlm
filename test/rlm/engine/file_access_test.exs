@@ -45,6 +45,36 @@ defmodule Rlm.Engine.FileAccessTest do
     assert length(evidence["hit_paths"]) >= 1
   end
 
+  test "tracks search provenance and hit-followup reads" do
+    tmp = TestHelpers.temp_dir("rlm-engine-followup-evidence")
+    on_exit(fn -> File.rm_rf!(tmp) end)
+
+    File.write!(
+      Path.join(tmp, "notes.txt"),
+      "start with a narrow example\nthen verify the surrounding context\nhowever sometimes the user asks for broader exploration\n"
+    )
+
+    settings = TestHelpers.settings(%{max_iterations: 1})
+
+    assert {:ok, bundle} = Loader.load({:path, Path.join(tmp, "notes.txt")}, settings)
+
+    assert {:ok, result} =
+             Engine.run(
+               "inspect retrieval provenance",
+               bundle,
+               settings,
+               Rlm.TestFollowupEvidenceProvider
+             )
+
+    assert result.completed?
+
+    evidence = get_in(hd(result.iteration_records), [:details, "evidence"])
+    assert Enum.any?(evidence["search_queries"], &(&1["kind"] == "behavioral"))
+    assert Enum.any?(evidence["search_queries"], &(&1["kind"] == "contradiction"))
+    assert Enum.any?(evidence["read_followups"], &(&1["query_kind"] == "behavioral"))
+    assert Enum.any?(evidence["read_followups"], &(&1["query_kind"] == "contradiction"))
+  end
+
   test "grep_files returns reusable hit objects" do
     tmp = TestHelpers.temp_dir("rlm-engine-grep")
     on_exit(fn -> File.rm_rf!(tmp) end)

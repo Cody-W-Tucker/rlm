@@ -5,13 +5,24 @@ defmodule Rlm.Engine.Grounding.Policy do
 
   @minimum_multi_file_reads 3
   @minimum_promoted_read_windows 3
+  @abstract_terms [
+    "iterative",
+    "incremental",
+    "mvp",
+    "minimum viable",
+    "thin slice",
+    "vertical slice",
+    "progressive elaboration",
+    "learning-by-doing",
+    "decomposition strategy"
+  ]
 
   def hint(context_bundle) do
     lazy_file_count = length(Map.get(context_bundle, :lazy_entries, []))
 
     cond do
       lazy_file_count > 0 ->
-        "Grounding hint: Base the final answer on direct inspection of the files. Prefer verified claims from inspected files over path-heavy attribution. Name a file only when the claim comes directly from that inspected file and the attribution materially helps the answer. For large line-delimited files, targeted `read_file()` windows count as inspected evidence; you do not need a whole-file read unless the task requires it. Do not introduce unsupported concepts as if they came from the corpus."
+        "Grounding hint: Base the final answer on direct inspection of the files. Prefer verified claims from inspected files over path-heavy attribution. Search for concrete behavioral markers, local examples, and contradictions rather than abstract theory labels. Name a file only when the claim comes directly from that inspected file and the attribution materially helps the answer. For large line-delimited files, targeted `read_file()` windows count as inspected evidence; you do not need a whole-file read unless the task requires it. Do not introduce unsupported concepts as if they came from the corpus."
 
       true ->
         "Grounding hint: Base the final answer on the observed context and avoid introducing unsupported claims as if they were present in the input."
@@ -21,7 +32,8 @@ defmodule Rlm.Engine.Grounding.Policy do
   def validate_final_answer(context_bundle, final_answer, details, iteration_records \\ []) do
     if file_backed?(context_bundle) do
       with :ok <- validate_cited_paths(final_answer, details),
-           :ok <- validate_grounding_grade(context_bundle, iteration_records) do
+           :ok <- validate_grounding_grade(context_bundle, iteration_records),
+           :ok <- validate_semantic_answer(final_answer, iteration_records) do
         :ok
       end
     else
@@ -48,10 +60,14 @@ defmodule Rlm.Engine.Grounding.Policy do
     %{
       search_count: evidence["search_count"] || evidence[:search_count] || 0,
       search_patterns: evidence["search_patterns"] || evidence[:search_patterns] || [],
+      search_queries:
+        normalize_entries(evidence["search_queries"] || evidence[:search_queries] || []),
       hit_paths: evidence["hit_paths"] || evidence[:hit_paths] || [],
       previewed_files: evidence["previewed_files"] || evidence[:previewed_files] || [],
       read_files: evidence["read_files"] || evidence[:read_files] || [],
-      read_windows: evidence["read_windows"] || evidence[:read_windows] || []
+      read_windows: evidence["read_windows"] || evidence[:read_windows] || [],
+      read_followups:
+        normalize_entries(evidence["read_followups"] || evidence[:read_followups] || [])
     }
   end
 
@@ -120,16 +136,100 @@ defmodule Rlm.Engine.Grounding.Policy do
       when search_count >= @minimum_promoted_read_windows ->
         read_units = read_units(context_bundle, metrics)
 
-        if read_units < @minimum_promoted_read_windows do
-          {:error,
-           "Grounding grade #{grade} is too weak after #{search_count} search rounds. Stop expanding search and promote at least #{@minimum_promoted_read_windows} strongest hits into targeted `read_file()` or `read_jsonl()` windows before finalizing."}
-        else
-          :ok
-        end
+        cond do
+          read_units < @minimum_promoted_read_windows ->
+            {:error,
+             "Grounding grade #{grade} is too weak after #{search_count} search rounds. Stop expanding search and promote at least #{@minimum_promoted_read_windows} strongest hits into targeted `read_file()` or `read_jsonl()` windows before finalizing."}
 
+          metrics.hit_paths >= 1 and Map.get(metrics, :read_followups, 0) < 1 ->
+            {:error,
+             "Grounding grade #{grade} is still too shallow after #{search_count} search rounds. Do not satisfy the read requirement with generic file-start reads. Follow the strongest hit lines or local passages with targeted `read_file()` or `read_jsonl()` windows before finalizing."}
+
+          true ->
+            :ok
+        end
       _ ->
         :ok
     end
+  end
+
+  defp validate_semantic_answer(final_answer, iteration_records) do
+    terms = unsupported_abstract_terms(final_answer)
+
+    if terms == [] do
+      :ok
+    else
+      followups = read_followups(iteration_records)
+
+      unsupported =
+        Enum.reject(terms, fn term ->
+          Enum.any?(followups, &followup_supports_term?(&1, term))
+        end)
+
+      if unsupported == [] do
+        :ok
+      else
+        {:error,
+         "Final answer used unsupported abstract labels (#{Enum.join(unsupported, ", ")}). Only use theory-laden labels when inspected passages support them directly; otherwise describe the observed behavior in plainer terms."}
+      end
+    end
+  end
+
+  defp normalize_entries(entries) do
+    Enum.map(entries, &normalize_entry/1)
+  end
+
+  defp normalize_entry(entry) when is_map(entry) do
+    Enum.reduce(entry, %{}, fn {key, value}, acc ->
+      Map.put(acc, normalize_key(key), value)
+    end)
+  end
+
+  defp normalize_entry(entry), do: entry
+
+  defp normalize_key(key) when is_atom(key), do: key
+
+  defp normalize_key(key) when is_binary(key) do
+    case key do
+      "id" -> :id
+      "kind" -> :kind
+      "line" -> :line
+      "path" -> :path
+      "text" -> :text
+      "field" -> :field
+      "value" -> :value
+      "source" -> :source
+      "window" -> :window
+      "pattern" -> :pattern
+      "query_id" -> :query_id
+      "query_kind" -> :query_kind
+      _ -> key
+    end
+  end
+
+  defp read_followups(iteration_records) do
+    iteration_records
+    |> Enum.flat_map(fn record ->
+      record
+      |> Map.get(:details, %{})
+      |> evidence()
+      |> Map.get(:read_followups, [])
+    end)
+  end
+
+  defp unsupported_abstract_terms(text) do
+    lowered = String.downcase(text)
+
+    Enum.filter(@abstract_terms, fn term ->
+      String.contains?(lowered, term)
+    end)
+  end
+
+  defp followup_supports_term?(followup, term) do
+    followup_text = String.downcase(to_string(Map.get(followup, :text, "")))
+    pattern_text = String.downcase(to_string(Map.get(followup, :pattern, "")))
+
+    String.contains?(followup_text, term) or String.contains?(pattern_text, term)
   end
 
   defp single_line_delimited_source?(context_bundle) do

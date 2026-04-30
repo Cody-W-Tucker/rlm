@@ -25,7 +25,7 @@ defmodule Rlm.Engine.Prompt.ContextStrategy do
           "Inline text is available in `context`. For file-backed sources, use `list_files()` or `sample_files()` to inspect file shape, `peek_file(path)` for light inspection, `read_file(path)` for deeper reads, `grep_files(pattern)` for reusable hits, and `grep_open(pattern)` for search-plus-preview. For JSONL corpora, use `sample_jsonl(path)` to inspect schema and `grep_jsonl_fields(path, field_pattern, text_pattern)` for record-aware retrieval."
 
         lazy_file_count > 0 ->
-          "Context is file-backed. Discover what is actually there rather than hunting for keywords that confirm your initial idea. Use `list_files()` or `sample_files()` to understand the corpus shape, then inspect representative files to see what they contain. For multi-file questions, find representative files first, preview the best candidates, then read at least 3 relevant files before final synthesis. For large line-delimited files, targeted `read_file()` windows count as direct inspection."
+          "Context is file-backed. Discover what is actually there rather than hunting for keywords that confirm your initial idea. Use `list_files()` or `sample_files()` to understand the corpus shape, then inspect representative files to see what they contain. For multi-file questions, search for behavioral markers and local examples first, read the surrounding passages, then run at least one contradiction check before final synthesis. For large line-delimited files, targeted `read_file()` windows count as direct inspection."
 
         true ->
           "Context is preloaded in `context`."
@@ -40,7 +40,7 @@ defmodule Rlm.Engine.Prompt.ContextStrategy do
           "This looks medium-sized. Start with direct synthesis, then one narrow sub-query if needed, and only then consider small sequential chunking."
 
         lazy_file_count > 0 ->
-          "This looks file-backed. First decide whether filename or path structure is informative. If it is, derive candidates from file shape. If it is not, derive candidates from content matches. For JSONL or chat-history corpora, sample schema first, then retrieve records through field-aware searches and targeted windows. Recurse only on the top candidates and keep the working set small."
+          "This looks file-backed. First decide whether filename or path structure is informative. If it is, derive candidates from file shape. If it is not, derive candidates from behavioral markers, concrete examples, and contradiction cues instead of theory words. For JSONL or chat-history corpora, sample schema first, then retrieve records through field-aware searches and targeted windows. Recurse only on the top candidates, keep the working set small, and let the read passages update the hypothesis before final synthesis."
 
         true ->
           "This looks large. Structure the work carefully, keep chunk counts low, and maintain a best-so-far answer."

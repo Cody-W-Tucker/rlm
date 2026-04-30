@@ -668,6 +668,36 @@ defmodule Rlm.TestEvidenceTrackingProvider do
   end
 end
 
+defmodule Rlm.TestFollowupEvidenceProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(_history, _system_prompt, _settings) do
+    {:ok,
+     %{
+       text: """
+       ```python
+       path = list_files()[0]
+       behavior_hits = grep_files("start with|first", limit=1)
+       contradiction_hits = grep_files("however|instead", limit=1)
+       behavior = behavior_hits[0]
+       print(peek_hit(behavior, before=0, after=1))
+       print(read_file(behavior.path, offset=behavior.line, limit=2))
+       if contradiction_hits:
+           contradiction = contradiction_hits[0]
+           print(read_file(contradiction.path, offset=contradiction.line, limit=1))
+       FINAL("followed matched passages")
+       ```
+       """,
+       input_tokens: 0,
+       output_tokens: 0
+     }}
+  end
+
+  def complete_subquery(_sub_context, _instruction, _settings) do
+    {:ok, %{text: "unused", input_tokens: 0, output_tokens: 0}}
+  end
+end
+
 defmodule Rlm.TestUngroundedCitationRecoveryProvider do
   @behaviour Rlm.Providers.Provider
 
