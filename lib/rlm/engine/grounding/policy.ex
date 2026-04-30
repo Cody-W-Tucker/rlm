@@ -72,7 +72,7 @@ defmodule Rlm.Engine.Grounding.Policy do
   end
 
   def read_units(context_bundle, metrics) do
-    if single_line_delimited_source?(context_bundle) do
+    if line_delimited_corpus?(context_bundle) do
       max(Map.get(metrics, :read_files, 0), Map.get(metrics, :read_windows, 0))
     else
       Map.get(metrics, :read_files, 0)
@@ -117,16 +117,48 @@ defmodule Rlm.Engine.Grounding.Policy do
   defp validate_multi_file_grounding(context_bundle, iteration_records) do
     if multi_file_backed?(context_bundle) do
       case Grade.assess(context_bundle, iteration_records) do
-        %{grade: grade, metrics: %{read_files: read_files, search_count: search_count}}
-        when read_files < @minimum_multi_file_reads and search_count >= 1 ->
-          {:error,
-           "Grounding grade #{grade} is too weak for a multi-file file-backed final answer. Search, preview, then promote at least #{@minimum_multi_file_reads} relevant files to targeted `read_file()` inspection before finalizing from that smaller inspected set."}
+        %{grade: grade, metrics: metrics, semantic: semantic} ->
+          if sufficient_multi_file_grounding?(context_bundle, metrics, semantic) do
+            :ok
+          else
+            search_count = Map.get(metrics, :search_count, 0)
+
+            if search_count >= 1 do
+              {:error, multi_file_grounding_message(context_bundle, grade)}
+            else
+              :ok
+            end
+          end
 
         _ ->
           :ok
       end
     else
       :ok
+    end
+  end
+
+  defp sufficient_multi_file_grounding?(context_bundle, metrics, semantic) do
+    read_files = Map.get(metrics, :read_files, 0)
+
+    cond do
+      read_files >= @minimum_multi_file_reads ->
+        true
+
+      multi_line_delimited_corpus?(context_bundle) ->
+        read_units(context_bundle, metrics) >= @minimum_multi_file_reads and
+          semantic.level in [:verified_with_challenge, :behaviorally_supported, :partially_supported]
+
+      true ->
+        false
+    end
+  end
+
+  defp multi_file_grounding_message(context_bundle, grade) do
+    if multi_line_delimited_corpus?(context_bundle) do
+      "Grounding grade #{grade} is too weak for a multi-file line-delimited final answer. Search, preview, then promote either at least #{@minimum_multi_file_reads} relevant files or at least #{@minimum_multi_file_reads} targeted `read_file()`/`read_jsonl()` windows with at least one hit-followup read before finalizing from that smaller inspected set."
+    else
+      "Grounding grade #{grade} is too weak for a multi-file file-backed final answer. Search, preview, then promote at least #{@minimum_multi_file_reads} relevant files to targeted `read_file()` inspection before finalizing from that smaller inspected set."
     end
   end
 
@@ -235,11 +267,25 @@ defmodule Rlm.Engine.Grounding.Policy do
   defp single_line_delimited_source?(context_bundle) do
     case Map.get(context_bundle, :lazy_entries, []) do
       [entry] ->
-        label = to_string(Map.get(entry, :label) || Map.get(entry, "label") || "")
-        Enum.any?(~w(.jsonl .ndjson .log .csv .tsv), &String.ends_with?(label, &1))
+        line_delimited_entry?(entry)
 
       _ ->
         false
     end
+  end
+
+  defp multi_line_delimited_corpus?(context_bundle) do
+    lazy_entries = Map.get(context_bundle, :lazy_entries, [])
+
+    length(lazy_entries) > 1 and Enum.all?(lazy_entries, &line_delimited_entry?/1)
+  end
+
+  defp line_delimited_corpus?(context_bundle) do
+    single_line_delimited_source?(context_bundle) or multi_line_delimited_corpus?(context_bundle)
+  end
+
+  defp line_delimited_entry?(entry) do
+    label = to_string(Map.get(entry, :label) || Map.get(entry, "label") || "")
+    Enum.any?(~w(.jsonl .ndjson .log .csv .tsv), &String.ends_with?(label, &1))
   end
 end
