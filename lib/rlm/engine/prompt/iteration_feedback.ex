@@ -89,7 +89,7 @@ defmodule Rlm.Engine.Prompt.IterationFeedback do
         "Current grounding grade: #{grade} (scout-only). The previews and grep hits are useful for high-value introspection, but promote the strongest candidates to targeted `read_file()` windows and read at least 3 relevant files before finalizing an evidence-heavy answer."
 
       %{grade: grade, level: :search_only} ->
-        "Current grounding grade: #{grade} (search-only). Search narrowed the corpus, but inspect concrete file windows with `peek_hit()`, `open_hit()`, or `peek_file()`, then promote the best candidates to targeted `read_file()` windows across at least 3 relevant files before finalizing."
+        "Current grounding grade: #{grade} (search-only). You have searched for patterns but haven't directly inspected what the files actually contain. Stop searching. Pick the most promising files from your hits, preview them with `peek_hit()` or `peek_file()`, then promote at least 3 to targeted `read_file()` windows before finalizing."
 
       %{grade: grade, level: :read_backed, metrics: %{read_files: read_files}} ->
         "Current grounding grade: #{grade} (limited read-backed). You have only read #{read_files} file(s). For a multi-file corpus, keep the working set small, but read targeted windows from at least 3 relevant files before finalizing."

@@ -69,6 +69,7 @@ defmodule Rlm.Engine.Prompt.Base do
     - If a sub-query raises `SubqueryError`, catch it only to change strategy or finalize from the best available answer.
     - Keep a best-so-far answer in a variable and finalize early when it is good enough.
     - Filter and slice context with Python before calling llm_query().
+    - Prefer direct discovery over confirmation: inspect what is actually present rather than searching for evidence that matches your initial hypothesis.
     - For synthesis-heavy questions over large corpora, prefer a brief structured evidence pass first: collect stable traits, 1-3 representative examples, and a confidence estimate for each trait before writing prose.
     - Store intermediate results in variables because the REPL is persistent.
     - Call FINAL() as soon as you have a useful answer; do not spend budget polishing unnecessarily.
