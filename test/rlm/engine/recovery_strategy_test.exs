@@ -6,9 +6,16 @@ defmodule Rlm.Engine.RecoveryStrategyTest do
 
   test "applies stricter recovery flags to total and first-byte timeouts" do
     total_timeout = %Failure{class: :total_timeout}
+    idle_timeout = %Failure{class: :idle_timeout}
     first_byte_timeout = %Failure{class: :first_byte_timeout}
+    insufficient_grounding = %Failure{class: :insufficient_grounding}
 
     assert Strategy.flags_for(total_timeout) == %{
+             recovery_mode: true,
+             broad_subqueries_disabled: true
+           }
+
+    assert Strategy.flags_for(idle_timeout) == %{
              recovery_mode: true,
              broad_subqueries_disabled: true
            }
@@ -17,11 +24,19 @@ defmodule Rlm.Engine.RecoveryStrategyTest do
              recovery_mode: true,
              broad_subqueries_disabled: true
            }
+
+    assert Strategy.flags_for(insufficient_grounding) == %{
+             recovery_mode: true,
+             broad_subqueries_disabled: true
+           }
   end
 
   test "returns timeout-specific recovery instructions" do
     assert Strategy.recovery_instruction(%Failure{class: :total_timeout}) =~
              "finalize from the best partial answer"
+
+    assert Strategy.recovery_instruction(%Failure{class: :idle_timeout}) =~
+             "provider went idle"
 
     assert Strategy.recovery_instruction(%Failure{class: :first_byte_timeout}) =~
              "never started responding"

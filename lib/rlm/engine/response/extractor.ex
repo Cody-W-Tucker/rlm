@@ -18,6 +18,7 @@ defmodule Rlm.Engine.Response.Extractor do
           |> Salvage.first_likely_fenced_block()
           |> Salvage.strip_fence_lines()
           |> Salvage.salvage_python_tail()
+          |> Salvage.sanitize_code_block()
           |> String.trim()
 
         cond do

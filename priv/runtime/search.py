@@ -1,3 +1,4 @@
+import os
 import re
 
 from runtime import files
@@ -106,22 +107,44 @@ def open_hit(hit, window=12):
     return OpenedHit(hit.path, hit.line, hit.text, match_preview(hit.path, hit.line, safe_window))
 
 
-def grep_files(pattern, limit=50):
+def _scoped_paths(path):
+    if path is None:
+        return state.get_file_sources()
+
+    if not isinstance(path, str):
+        raise ValueError("path must be a string when provided")
+
+    normalized = os.path.realpath(path)
+    allowed = state.get_file_sources()
+
+    if normalized in allowed:
+        return [normalized]
+
+    prefix = normalized + os.sep
+    scoped = [candidate for candidate in allowed if candidate.startswith(prefix)]
+
+    if scoped:
+        return scoped
+
+    raise ValueError(f"path is not in the allowed file set: {path}")
+
+
+def grep_files(pattern, limit=50, path=None):
     compiled = re.compile(pattern)
     safe_limit = max(1, min(int(limit), 500))
     matches = []
     query = state.record_search(pattern, "grep_files")
 
-    for path in state.get_file_sources():
-        with open(path, "r", encoding="utf-8") as handle:
+    for candidate in _scoped_paths(path):
+        with open(candidate, "r", encoding="utf-8") as handle:
             for number, line in enumerate(handle, start=1):
                 if compiled.search(line):
-                    state.evidence["hit_paths"].add(path)
+                    state.evidence["hit_paths"].add(candidate)
                     text = line.rstrip(chr(10))
-                    state.register_hit(query, path, number, text)
+                    state.register_hit(query, candidate, number, text)
                     matches.append(
                         Hit(
-                            path,
+                            candidate,
                             number,
                             text,
                             query_id=query["id"],
@@ -135,26 +158,26 @@ def grep_files(pattern, limit=50):
     return matches
 
 
-def grep_open(pattern, limit=10, window=12):
+def grep_open(pattern, limit=10, window=12, path=None):
     compiled = re.compile(pattern)
     safe_limit = max(1, min(int(limit), 200))
     safe_window = max(0, min(int(window), 80))
     matches = []
     query = state.record_search(pattern, "grep_open")
 
-    for path in state.get_file_sources():
-        with open(path, "r", encoding="utf-8") as handle:
+    for candidate in _scoped_paths(path):
+        with open(candidate, "r", encoding="utf-8") as handle:
             for number, line in enumerate(handle, start=1):
                 text = line.rstrip(chr(10))
                 if compiled.search(line):
-                    state.evidence["hit_paths"].add(path)
-                    state.register_hit(query, path, number, text)
+                    state.evidence["hit_paths"].add(candidate)
+                    state.register_hit(query, candidate, number, text)
                     matches.append(
                         OpenedHit(
-                            path,
+                            candidate,
                             number,
                             text,
-                            match_preview(path, number, safe_window),
+                            match_preview(candidate, number, safe_window),
                             query_id=query["id"],
                             query_kind=query["kind"],
                             query_pattern=query["pattern"],

@@ -66,7 +66,7 @@ defmodule Rlm.Engine.Failure do
         classify_subquery(message)
 
       :async_wrapper_syntax_error ->
-        build(:async_failed, :runtime, message, true)
+        build(:async_wrapper_syntax_error, :runtime, message, true)
 
       :syntax_unterminated_triple_quote ->
         build(:runtime_finalization_error, :runtime, message, true)
@@ -88,6 +88,8 @@ defmodule Rlm.Engine.Failure do
     block_count = details["block_count"] || details[:block_count]
     failed_block_code = details["failed_block_code"] || details[:failed_block_code]
 
+    message = append_runtime_hint(message, failed_block_code)
+
     cond do
       is_integer(failed_block_index) and is_integer(block_count) and is_binary(failed_block_code) ->
         message <>
@@ -98,6 +100,25 @@ defmodule Rlm.Engine.Failure do
         message
     end
   end
+
+  defp append_runtime_hint(message, failed_block_code) when is_binary(failed_block_code) do
+    cond do
+      String.contains?(message, "unexpected keyword argument 'path'") and
+          String.contains?(failed_block_code, "grep_files(") ->
+        message <>
+          "\n\nHint: scope the search with `grep_files(..., path=...)` or `grep_open(..., path=...)` instead of inventing a separate file filter."
+
+      String.contains?(message, "string indices must be integers") and
+          String.contains?(failed_block_code, "read_file(") ->
+        message <>
+          "\n\nHint: `read_file()` returns one string with `N: line content` lines. Use `print(read_file(...))` or split the string, but do not treat each line like a dict."
+
+      true ->
+        message
+    end
+  end
+
+  defp append_runtime_hint(message, _failed_block_code), do: message
 
   def diagnosis(%__MODULE__{advice: advice}), do: advice
 
@@ -235,6 +256,10 @@ defmodule Rlm.Engine.Failure do
   defp advice_for(:async_failed),
     do:
       "the async strategy failed. Fall back to direct reasoning or one narrow sequential sub-query."
+
+  defp advice_for(:async_wrapper_syntax_error),
+    do:
+      "the async wrapper received malformed fenced code. Remove stray Markdown fences, keep one clean Python block, and retry with a simpler sequential step."
 
   defp advice_for(:runtime_finalization_error),
     do:

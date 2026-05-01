@@ -39,8 +39,8 @@ defmodule Rlm.Engine.Prompt.Base do
     6. `read_jsonl(path, offset=1, limit=20)`: parse a small JSONL record window and return `[{"line": n, "record": ...}]` entries.
     7. `sample_jsonl(path, limit=20)`: evenly sample JSONL records across a file to understand schema and time/range variation.
     8. `grep_jsonl_fields(path, field_pattern, text_pattern=".*", limit=20)`: search parsed JSONL scalar fields and return hits with `.path`, `.line`, `.field`, and `.value`.
-    9. `grep_files(pattern, limit=50)`: regex search across allowed files and return reusable hit objects with `.path`, `.line`, `.text`, and string rendering as `path:line: text`.
-    10. `grep_open(pattern, limit=10, window=12)`: search across allowed files and return hit objects with `.path`, `.line`, `.text`, and `.preview` for immediate inspection.
+    9. `grep_files(pattern, limit=50, path=None)`: regex search across allowed files and return reusable hit objects with `.path`, `.line`, `.text`, and string rendering as `path:line: text`. Optional `path` narrows search to one allowed file or an allowed path prefix.
+    10. `grep_open(pattern, limit=10, window=12, path=None)`: search across allowed files and return hit objects with `.path`, `.line`, `.text`, and `.preview` for immediate inspection. Optional `path` narrows search to one allowed file or an allowed path prefix.
     11. `peek_hit(hit, before=5, after=10)`: inspect lines around a hit without manually computing file offsets.
     12. `open_hit(hit, window=12)`: turn a hit into an opened hit with a `.preview` window around the match.
     13. `assess_evidence(question, hits=None, reads=None, hypothesis=None)`: summarize current support, gaps, suggested reads, and whether to read more, run a counterexample pass, or finalize.
@@ -62,6 +62,7 @@ defmodule Rlm.Engine.Prompt.Base do
     - `list_files()` and `sample_files()` return path strings. Good: `path = files[0]`. Also tolerated: `path = files[0]['path']`. Do not use `files[0].path`.
     - If filename/path structure is informative, use `sample_files()` or `list_files()` to derive a small candidate set from file shape, then use `peek_file()` and `read_file()` on only the best candidates.
     - If filename/path structure is not informative, use `grep_files()` or `grep_open()` in two phases: first search neutral behavioral markers and nearby phrasing that would naturally surround the answer, then search for passages that would weaken, bound, or surprise your current claim.
+    - When you need to scope a grep to one candidate file or folder, pass `path=...` to `grep_files()` or `grep_open()` instead of inventing a new helper.
     - After content search, prefer `peek_hit(hit)` or `open_hit(hit)` over hardcoding paths or slicing large file strings by character count.
     - For large line-delimited files such as `jsonl`, logs, CSV, or TSV, do not treat the whole file as one document. Search first, then inspect small line windows with `peek_file(path, offset=...)` or `read_file(path, offset=..., limit=...)`.
     - For JSONL or chat-history corpora, first inspect the schema with `sample_jsonl()`, then search parsed fields with `grep_jsonl_fields()` before reading targeted windows.

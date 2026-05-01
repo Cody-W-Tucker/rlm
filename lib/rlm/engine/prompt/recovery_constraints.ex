@@ -14,7 +14,7 @@ defmodule Rlm.Engine.Prompt.RecoveryConstraints do
       ),
       if(recovery_flags.broad_subqueries_disabled,
         do:
-          "- Broad chunking and parallel fan-out are disabled for this run because a previous broad strategy failed.",
+          "- Broad chunking, repeated search expansion, and parallel fan-out are disabled for this run because a previous broad strategy failed. Reuse the strongest inspected evidence set and prefer one narrow direct step.",
         else: nil
       )
     ]

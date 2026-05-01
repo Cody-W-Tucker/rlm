@@ -56,15 +56,15 @@ defmodule Rlm.Engine.Prompt.IterationFeedback do
 
     (parts ++
        [
-          "Iteration #{iteration}/#{settings.max_iterations}. Sub-queries used: #{run_state.total_sub_queries}/#{settings.max_sub_queries}.",
-          best_answer_note,
-          grounding_note,
-          consolidation_note,
-          no_output_note,
-          endgame_note,
-          subquery_candidate_note,
-          "Continue processing or call FINAL() when you have the answer."
-        ])
+         "Iteration #{iteration}/#{settings.max_iterations}. Sub-queries used: #{run_state.total_sub_queries}/#{settings.max_sub_queries}.",
+         best_answer_note,
+         grounding_note,
+         consolidation_note,
+         no_output_note,
+         endgame_note,
+         subquery_candidate_note,
+         "Continue processing or call FINAL() when you have the answer."
+       ])
     |> Enum.reject(&is_nil/1)
     |> Enum.join("\n\n")
   end
@@ -80,8 +80,12 @@ defmodule Rlm.Engine.Prompt.IterationFeedback do
 
   defp consolidation_note(exec_result) do
     evidence = GroundingPolicy.evidence(exec_result.details || %{})
+    read_units = max(length(evidence.read_files), length(evidence.read_windows))
 
     cond do
+      evidence.search_count >= 6 and read_units < 2 ->
+        "You are still scouting after #{evidence.search_count} search rounds with only #{read_units} promoted read(s). Stop searching. Pick the two strongest hit-backed passages, inspect them directly with `read_file()` or `read_jsonl()`, update `working_claim`, then decide whether one more read or `FINAL(...)` is justified."
+
       evidence.search_count >= 3 and evidence.read_followups == [] ->
         "You have already done multiple search rounds. Stop expanding search; promote the strongest hit lines into targeted `read_file()` or `read_jsonl()` windows, draft a tentative claim from those passages, derive expected-nearby and weakening patterns from that claim, call `assess_evidence()` if you need a convergence check, then run one challenge pass before finalizing."
 
@@ -106,7 +110,9 @@ defmodule Rlm.Engine.Prompt.IterationFeedback do
         level: :read_backed,
         metrics: %{read_files: read_files, read_windows: windows}
       } ->
-        "Current grounding grade: #{grade} (limited read-backed). You have read #{read_files} file(s) and #{windows} targeted window(s). Keep the working set small, but make sure the next reads follow strong hits or nearby examples, update your hypothesis, and check one competing interpretation before finalizing."
+        deficit = max(0, 3 - max(read_files, windows))
+
+        "Current grounding grade: #{grade} (limited read-backed). You have read #{read_files} file(s) and #{windows} targeted window(s). You still need #{deficit} more promoted read(s)/window(s) before a multi-file answer is well-grounded. Keep the working set small, but make sure the next reads follow strong hits or nearby examples, update your hypothesis, and check one competing interpretation before finalizing."
 
       %{grade: grade, label: label, summary: summary, semantic: semantic} ->
         "Current grounding grade: #{grade} (#{label}). #{summary} Semantic grounding: #{semantic.grade} (#{semantic.label}). #{semantic.summary}"
@@ -120,7 +126,8 @@ defmodule Rlm.Engine.Prompt.IterationFeedback do
     evidence = GroundingPolicy.evidence(exec_result.details || %{})
 
     if exec_result.stdout == "" and exec_result.stderr == "" and
-         (evidence.read_files != [] or evidence.read_windows != [] or evidence.read_followups != []) do
+         (evidence.read_files != [] or evidence.read_windows != [] or
+            evidence.read_followups != []) do
       "The last step inspected file content but produced no visible output. `read_file()` returns text but does not print by itself; assign the result, then `print(...)` it for inspection or synthesize and call `FINAL(...)`."
     end
   end
@@ -147,6 +154,7 @@ defmodule Rlm.Engine.Prompt.IterationFeedback do
   defp ready_to_finalize?(exec_result, run_state) do
     evidence = GroundingPolicy.evidence(exec_result.details || %{})
 
-    is_binary(run_state.best_answer_so_far) or evidence.read_followups != [] or evidence.read_files != []
+    is_binary(run_state.best_answer_so_far) or evidence.read_followups != [] or
+      evidence.read_files != []
   end
 end

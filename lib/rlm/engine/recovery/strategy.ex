@@ -7,13 +7,38 @@ defmodule Rlm.Engine.Recovery.Strategy do
     base = %{recovery_mode: true}
 
     case class do
-      :async_failed -> Map.merge(base, %{async_disabled: true, broad_subqueries_disabled: true})
-      :provider_timeout -> Map.merge(base, %{broad_subqueries_disabled: true})
-      :total_timeout -> Map.merge(base, %{broad_subqueries_disabled: true})
-      :first_byte_timeout -> Map.merge(base, %{broad_subqueries_disabled: true})
-      :subquery_budget_exhausted -> Map.merge(base, %{broad_subqueries_disabled: true})
-      :subquery_failed -> Map.merge(base, %{broad_subqueries_disabled: true})
-      _ -> base
+      :async_failed ->
+        Map.merge(base, %{async_disabled: true, broad_subqueries_disabled: true})
+
+      :async_wrapper_syntax_error ->
+        Map.merge(base, %{async_disabled: true, broad_subqueries_disabled: true})
+
+      :provider_timeout ->
+        Map.merge(base, %{broad_subqueries_disabled: true})
+
+      :total_timeout ->
+        Map.merge(base, %{broad_subqueries_disabled: true})
+
+      :idle_timeout ->
+        Map.merge(base, %{broad_subqueries_disabled: true})
+
+      :first_byte_timeout ->
+        Map.merge(base, %{broad_subqueries_disabled: true})
+
+      :subquery_budget_exhausted ->
+        Map.merge(base, %{broad_subqueries_disabled: true})
+
+      :subquery_failed ->
+        Map.merge(base, %{broad_subqueries_disabled: true})
+
+      :insufficient_grounding ->
+        Map.merge(base, %{broad_subqueries_disabled: true})
+
+      :ungrounded_final_answer ->
+        Map.merge(base, %{broad_subqueries_disabled: true})
+
+      _ ->
+        base
     end
   end
 
@@ -25,12 +50,20 @@ defmodule Rlm.Engine.Recovery.Strategy do
     "The total request deadline was already exhausted. Do not repeat the same broad strategy; finalize from the best partial answer or do one narrow direct step."
   end
 
+  def recovery_instruction(%Failure{class: :idle_timeout}) do
+    "The provider went idle mid-stream. Reuse the strongest inspected evidence you already have, avoid broad retries, and either finalize now or do one narrow direct step."
+  end
+
   def recovery_instruction(%Failure{class: :first_byte_timeout}) do
     "The provider never started responding. Do not blindly retry the same broad request; simplify it sharply or switch to direct reasoning and finalize early."
   end
 
   def recovery_instruction(%Failure{class: :async_failed}) do
     "Do not use async again in this run. Use direct reasoning or one narrow sequential sub-query."
+  end
+
+  def recovery_instruction(%Failure{class: :async_wrapper_syntax_error}) do
+    "The async wrapper hit malformed fenced code. Do not repeat the same block structure; remove stray Markdown fences, keep one clean Python block, and use direct reasoning or one narrow sequential sub-query."
   end
 
   def recovery_instruction(%Failure{class: :subquery_budget_exhausted}) do

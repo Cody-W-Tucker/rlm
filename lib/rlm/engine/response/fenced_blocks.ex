@@ -32,7 +32,7 @@ defmodule Rlm.Engine.Response.FencedBlocks do
       end
 
     Enum.reduce(blocks, [], fn {language, code}, acc ->
-      trimmed = String.trim(code)
+      trimmed = Salvage.sanitize_code_block(code)
 
       if trimmed != "" and
            (language in ["python", "py", "repl"] or Salvage.looks_like_python?(trimmed)) do

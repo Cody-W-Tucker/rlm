@@ -34,7 +34,10 @@ defmodule Rlm.Engine.CoreRuntimeTest do
 
     assert result.status == :max_iterations
     refute result.completed?
-    assert result.answer == "The run reached its iteration limit before it could produce a reliable answer."
+
+    assert result.answer ==
+             "The run reached its iteration limit before it could produce a reliable answer."
+
     assert result.best_answer_reason == nil
     assert hd(result.iteration_records).stdout =~ "=== KEY EXAMPLE 1 ==="
   end
@@ -108,6 +111,18 @@ defmodule Rlm.Engine.CoreRuntimeTest do
 
     assert {:ok, result} =
              Engine.run("summarize", bundle, settings, Rlm.TestInterleavedFenceProvider)
+
+    assert result.completed?
+    assert result.answer == "alpha beta"
+    assert length(result.iteration_records) == 1
+  end
+
+  test "strips stray fence lines embedded inside an extracted python block" do
+    settings = TestHelpers.settings(%{max_iterations: 1})
+    bundle = %{entries: [], text: "abcdef", bytes: 6}
+
+    assert {:ok, result} =
+             Engine.run("summarize", bundle, settings, Rlm.TestEmbeddedFenceLineProvider)
 
     assert result.completed?
     assert result.answer == "alpha beta"

@@ -4,7 +4,9 @@ defmodule Rlm.Engine.Grounding.PolicyTest do
   alias Rlm.Engine.Grounding.Policy
 
   test "search progress no longer blocks continuation" do
-    bundle = %{lazy_entries: [%{label: "/tmp/a.md"}, %{label: "/tmp/b.md"}, %{label: "/tmp/c.md"}]}
+    bundle = %{
+      lazy_entries: [%{label: "/tmp/a.md"}, %{label: "/tmp/b.md"}, %{label: "/tmp/c.md"}]
+    }
 
     records = [
       %{
@@ -23,8 +25,33 @@ defmodule Rlm.Engine.Grounding.PolicyTest do
     assert :ok = Policy.validate_search_progress(bundle, records)
   end
 
+  test "search progress blocks repeated scouting with too few promoted reads" do
+    bundle = %{
+      lazy_entries: [%{label: "/tmp/a.md"}, %{label: "/tmp/b.md"}, %{label: "/tmp/c.md"}]
+    }
+
+    records = [
+      %{
+        details: %{
+          "evidence" => %{
+            "search_count" => 6,
+            "hit_paths" => ["/tmp/a.md"],
+            "read_files" => ["/tmp/a.md"],
+            "read_windows" => ["/tmp/a.md:1:20"],
+            "read_followups" => []
+          }
+        }
+      }
+    ]
+
+    assert {:error, message} = Policy.validate_search_progress(bundle, records)
+    assert message =~ "Stop expanding the search space"
+  end
+
   test "validate_final_answer still rejects generic file-start reads" do
-    bundle = %{lazy_entries: [%{label: "/tmp/a.md"}, %{label: "/tmp/b.md"}, %{label: "/tmp/c.md"}]}
+    bundle = %{
+      lazy_entries: [%{label: "/tmp/a.md"}, %{label: "/tmp/b.md"}, %{label: "/tmp/c.md"}]
+    }
 
     records = [
       %{
@@ -52,7 +79,9 @@ defmodule Rlm.Engine.Grounding.PolicyTest do
   end
 
   test "rejects answer that echoes search scaffolding without read support" do
-    bundle = %{lazy_entries: [%{label: "/tmp/a.md"}, %{label: "/tmp/b.md"}, %{label: "/tmp/c.md"}]}
+    bundle = %{
+      lazy_entries: [%{label: "/tmp/a.md"}, %{label: "/tmp/b.md"}, %{label: "/tmp/c.md"}]
+    }
 
     records = [
       %{
@@ -94,7 +123,9 @@ defmodule Rlm.Engine.Grounding.PolicyTest do
   end
 
   test "allows answer when search phrases are backed by read followups" do
-    bundle = %{lazy_entries: [%{label: "/tmp/a.md"}, %{label: "/tmp/b.md"}, %{label: "/tmp/c.md"}]}
+    bundle = %{
+      lazy_entries: [%{label: "/tmp/a.md"}, %{label: "/tmp/b.md"}, %{label: "/tmp/c.md"}]
+    }
 
     records = [
       %{
@@ -140,7 +171,9 @@ defmodule Rlm.Engine.Grounding.PolicyTest do
   end
 
   test "allows answer with common words even when they appeared in search patterns" do
-    bundle = %{lazy_entries: [%{label: "/tmp/a.md"}, %{label: "/tmp/b.md"}, %{label: "/tmp/c.md"}]}
+    bundle = %{
+      lazy_entries: [%{label: "/tmp/a.md"}, %{label: "/tmp/b.md"}, %{label: "/tmp/c.md"}]
+    }
 
     records = [
       %{
@@ -177,7 +210,9 @@ defmodule Rlm.Engine.Grounding.PolicyTest do
   end
 
   test "ignores low-signal probe terms when checking search scaffolding echoes" do
-    bundle = %{lazy_entries: [%{label: "/tmp/a.md"}, %{label: "/tmp/b.md"}, %{label: "/tmp/c.md"}]}
+    bundle = %{
+      lazy_entries: [%{label: "/tmp/a.md"}, %{label: "/tmp/b.md"}, %{label: "/tmp/c.md"}]
+    }
 
     records = [
       %{
@@ -229,7 +264,12 @@ defmodule Rlm.Engine.Grounding.PolicyTest do
           "evidence" => %{
             "search_count" => 4,
             "search_queries" => [
-              %{"id" => 1, "kind" => "behavioral", "pattern" => "start with", "source" => "grep_jsonl_fields"}
+              %{
+                "id" => 1,
+                "kind" => "behavioral",
+                "pattern" => "start with",
+                "source" => "grep_jsonl_fields"
+              }
             ],
             "hit_paths" => ["/tmp/a.jsonl"],
             "previewed_files" => ["/tmp/a.jsonl", "/tmp/b.jsonl", "/tmp/c.jsonl"],

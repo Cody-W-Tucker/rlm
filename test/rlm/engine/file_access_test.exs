@@ -142,6 +142,26 @@ defmodule Rlm.Engine.FileAccessTest do
     assert stdout =~ "1: alpha"
   end
 
+  test "grep_files supports path-scoped searches" do
+    tmp = TestHelpers.temp_dir("rlm-engine-grep-scoped")
+    on_exit(fn -> File.rm_rf!(tmp) end)
+
+    File.write!(Path.join(tmp, "alpha.txt"), "alpha\n")
+    File.write!(Path.join(tmp, "beta.txt"), "beta\n")
+    File.write!(Path.join(tmp, "gamma.txt"), "gamma\n")
+    settings = TestHelpers.settings(%{max_iterations: 1})
+
+    assert {:ok, bundle} = Loader.load({:path, tmp}, settings)
+
+    assert {:ok, result} =
+             Engine.run("find beta", bundle, settings, Rlm.TestGrepScopedPathProvider)
+
+    assert result.completed?
+    assert result.answer =~ "1:"
+    assert result.answer =~ "beta.txt"
+    assert result.answer =~ ":1"
+  end
+
   test "peek_hit and open_hit support direct hit follow-up" do
     tmp = TestHelpers.temp_dir("rlm-engine-hit-followup")
     on_exit(fn -> File.rm_rf!(tmp) end)

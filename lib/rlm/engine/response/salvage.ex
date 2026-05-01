@@ -40,6 +40,14 @@ defmodule Rlm.Engine.Response.Salvage do
     end
   end
 
+  def sanitize_code_block(text) do
+    text
+    |> String.split("\n")
+    |> Enum.reject(&Regex.match?(~r/^`{3,}[a-zA-Z0-9_-]*\s*$/, String.trim(&1)))
+    |> Enum.join("\n")
+    |> String.trim()
+  end
+
   def looks_like_python?(text) do
     trimmed = String.trim(text)
 

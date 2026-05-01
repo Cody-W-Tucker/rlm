@@ -5,6 +5,8 @@ defmodule Rlm.Engine.Grounding.Policy do
 
   @minimum_multi_file_reads 3
   @minimum_promoted_read_windows 3
+  @early_search_round_threshold 6
+  @late_search_round_threshold 10
   @minimum_search_echo_phrases 3
   @minimum_unsupported_echo_ratio 0.5
   @low_signal_search_terms MapSet.new(~w(
@@ -36,12 +38,29 @@ defmodule Rlm.Engine.Grounding.Policy do
     end
   end
 
-  def validate_search_progress(_context_bundle, _iteration_records) do
-    # Search-promotion checks now run only during validate_final_answer (via
-    # validate_grounding_grade).  Blocking :continue was counterproductive:
-    # the model needs further iterations to act on the feedback nudge that
-    # tells it to stop searching and start reading.
-    :ok
+  def validate_search_progress(context_bundle, iteration_records) do
+    case Grade.assess(context_bundle, iteration_records) do
+      %{grade: grade, metrics: %{search_count: search_count} = metrics}
+      when search_count >= @early_search_round_threshold ->
+        promoted_reads = read_units(context_bundle, metrics)
+
+        cond do
+          search_count >= @late_search_round_threshold and
+              promoted_reads < @minimum_promoted_read_windows ->
+            {:error,
+             "Grounding grade #{grade} is still too weak after #{search_count} search rounds. Stop searching now and promote at least #{@minimum_promoted_read_windows} strongest hits into targeted `read_file()` or `read_jsonl()` windows before taking another broad retrieval step."}
+
+          promoted_reads < 2 ->
+            {:error,
+             "Grounding grade #{grade} is drifting after #{search_count} search rounds with only #{promoted_reads} promoted read(s). Stop expanding the search space and inspect the strongest hits directly before continuing."}
+
+          true ->
+            :ok
+        end
+
+      _ ->
+        :ok
+    end
   end
 
   def file_backed?(context_bundle), do: length(Map.get(context_bundle, :lazy_entries, [])) > 0
@@ -142,7 +161,11 @@ defmodule Rlm.Engine.Grounding.Policy do
 
       multi_line_delimited_corpus?(context_bundle) ->
         read_units(context_bundle, metrics) >= @minimum_multi_file_reads and
-          semantic.level in [:verified_with_challenge, :behaviorally_supported, :partially_supported]
+          semantic.level in [
+            :verified_with_challenge,
+            :behaviorally_supported,
+            :partially_supported
+          ]
 
       true ->
         false
@@ -175,6 +198,7 @@ defmodule Rlm.Engine.Grounding.Policy do
           true ->
             :ok
         end
+
       _ ->
         :ok
     end
