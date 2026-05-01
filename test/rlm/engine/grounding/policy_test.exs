@@ -176,6 +176,44 @@ defmodule Rlm.Engine.Grounding.PolicyTest do
              )
   end
 
+  test "ignores low-signal probe terms when checking search scaffolding echoes" do
+    bundle = %{lazy_entries: [%{label: "/tmp/a.md"}, %{label: "/tmp/b.md"}, %{label: "/tmp/c.md"}]}
+
+    records = [
+      %{
+        details: %{
+          "evidence" => %{
+            "search_count" => 3,
+            "search_patterns" => [
+              "\\bdecision\\b|\\bprefer\\b|\\bviable\\b|\\bpath\\b",
+              "\\bfirst\\b|\\binspect\\b|\\bread\\b"
+            ],
+            "hit_paths" => ["/tmp/a.md"],
+            "read_files" => ["/tmp/a.md", "/tmp/b.md", "/tmp/c.md"],
+            "read_windows" => ["/tmp/a.md:20:5"],
+            "read_followups" => [
+              %{
+                "path" => "/tmp/a.md",
+                "line" => 20,
+                "pattern" => "start with|first",
+                "query_kind" => "behavioral",
+                "text" => "start with the narrow example"
+              }
+            ]
+          }
+        }
+      }
+    ]
+
+    assert :ok =
+             Policy.validate_final_answer(
+               bundle,
+               "The user inspects a small sample first, then reads more when a viable path emerges.",
+               hd(records).details,
+               records
+             )
+  end
+
   test "allows multi-file line-delimited runs with window-backed followup evidence" do
     bundle = %{
       lazy_entries: [

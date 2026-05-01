@@ -7,6 +7,10 @@ defmodule Rlm.Engine.Grounding.Policy do
   @minimum_promoted_read_windows 3
   @minimum_search_echo_phrases 3
   @minimum_unsupported_echo_ratio 0.5
+  @low_signal_search_terms MapSet.new(~w(
+    after before choice choices counterexample decision decide evidence finalize first inspect
+    option options path paths prefer read scout search viable with
+  ))
 
   def hint(context_bundle) do
     lazy_file_count = length(Map.get(context_bundle, :lazy_entries, []))
@@ -267,6 +271,7 @@ defmodule Rlm.Engine.Grounding.Policy do
     |> String.split(~r/\s+/, trim: true)
     |> Enum.reject(&(String.length(&1) < 4))
     |> Enum.map(&String.downcase/1)
+    |> Enum.reject(&MapSet.member?(@low_signal_search_terms, &1))
   end
 
   defp extract_keywords_from_pattern(_), do: []
