@@ -33,17 +33,38 @@ THEORY_LOADED_PATTERNS = [
     r"decomposition\s+strategy",
 ]
 
-CONTRADICTION_PATTERNS = [
+COUNTEREXAMPLE_PATTERNS = [
     r"counterexample",
     r"contradict",
     r"disconfirm",
     r"exception",
     r"however",
+    r"surpris",
+    r"unexpected",
+    r"wouldn['’]?t\s+expect",
+    r"if\s+this\s+were\s+false",
+    r"if\s+that\s+were\s+wrong",
     r"instead",
     r"alternative",
     r"contrast",
     r"but\b",
     r"not\s+always",
+]
+
+EXPECTED_SUPPORT_PATTERNS = [
+    r"start\s+with",
+    r"first",
+    r"next\s+step",
+    r"break\s+that\s+down",
+    r"broad\s+terms",
+    r"proposal",
+    r"architecture",
+    r"feedback",
+    r"iterate",
+    r"narrow",
+    r"scope",
+    r"only",
+    r"don['’]?t",
 ]
 
 
@@ -132,11 +153,14 @@ def hit_registry_snapshot():
 def classify_search_kind(pattern):
     normalized = str(pattern or "")
 
-    if any(re.search(candidate, normalized, re.IGNORECASE) for candidate in CONTRADICTION_PATTERNS):
-        return "contradiction"
-
     if any(re.search(candidate, normalized, re.IGNORECASE) for candidate in THEORY_LOADED_PATTERNS):
         return "theory_loaded"
+
+    if any(re.search(candidate, normalized, re.IGNORECASE) for candidate in COUNTEREXAMPLE_PATTERNS):
+        return "counterexample"
+
+    if any(re.search(candidate, normalized, re.IGNORECASE) for candidate in EXPECTED_SUPPORT_PATTERNS):
+        return "expected_support"
 
     return "behavioral"
 

@@ -140,7 +140,8 @@ def support_summary(snapshot):
         "read_files": len(snapshot.get("read_files", [])),
         "read_windows": len(snapshot.get("read_windows", [])),
         "read_followups": len(snapshot.get("read_followups", [])),
-        "contradiction_searches": count_query_kind(snapshot, "contradiction"),
+        "expected_support_searches": count_query_kind(snapshot, "expected_support"),
+        "counterexample_searches": count_query_kind(snapshot, "counterexample"),
         "behavioral_searches": count_query_kind(snapshot, "behavioral"),
     }
 
@@ -166,8 +167,10 @@ def evidence_gaps(snapshot):
     if summary["read_followups"] == 0:
         gaps.append("Current reads are not tied back to matched hits yet.")
 
-    if summary["behavioral_searches"] >= 1 and summary["contradiction_searches"] == 0:
-        gaps.append("No contradiction or disconfirmation pass recorded yet.")
+    if (
+        summary["behavioral_searches"] >= 1 or summary["expected_support_searches"] >= 1
+    ) and summary["counterexample_searches"] == 0:
+        gaps.append("No counterexample or surprise-check pass recorded yet.")
 
     if len(snapshot.get("hit_paths", [])) >= 2 and len(snapshot.get("read_files", [])) < 2:
         gaps.append("Search hit multiple sources, but direct reads have not compared them yet.")
@@ -223,13 +226,13 @@ def flattened_hits():
 def recommend_next_action(snapshot, suggested_reads):
     summary = support_summary(snapshot)
 
-    if summary["read_followups"] >= 2 and summary["contradiction_searches"] >= 1 and (
+    if summary["read_followups"] >= 2 and summary["counterexample_searches"] >= 1 and (
         summary["read_units"] >= 3 or summary["read_files"] >= 2
     ):
         return "finalize"
 
-    if summary["read_followups"] >= 1 and summary["contradiction_searches"] == 0:
-        return "run_contradiction_search"
+    if summary["read_followups"] >= 1 and summary["counterexample_searches"] == 0:
+        return "run_counterexample_search"
 
     if summary["search_count"] >= 2 and suggested_reads:
         return "read_more"

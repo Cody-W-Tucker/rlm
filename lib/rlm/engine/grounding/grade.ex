@@ -51,21 +51,23 @@ defmodule Rlm.Engine.Grounding.Grade do
       search_queries = MapSet.to_list(aggregate.search_queries)
       read_followups = MapSet.to_list(aggregate.read_followups)
 
-      %{
-        search_count: aggregate.search_count,
-        hit_paths: MapSet.size(aggregate.hit_paths),
-        previewed_files: MapSet.size(aggregate.previewed_files),
-        read_files: MapSet.size(aggregate.read_files),
-        read_windows: MapSet.size(aggregate.read_windows),
-        behavioral_searches: count_kind(search_queries, "behavioral"),
-        contradiction_searches: count_kind(search_queries, "contradiction"),
-        theory_loaded_searches: count_kind(search_queries, "theory_loaded"),
-        read_followups: length(read_followups),
-        behavioral_followups: count_kind(read_followups, "behavioral", :query_kind),
-        contradiction_followups: count_kind(read_followups, "contradiction", :query_kind),
-        theory_loaded_followups: count_kind(read_followups, "theory_loaded", :query_kind)
-      }
-    end)
+        %{
+          search_count: aggregate.search_count,
+          hit_paths: MapSet.size(aggregate.hit_paths),
+          previewed_files: MapSet.size(aggregate.previewed_files),
+          read_files: MapSet.size(aggregate.read_files),
+          read_windows: MapSet.size(aggregate.read_windows),
+          behavioral_searches: count_kind(search_queries, "behavioral"),
+          expected_support_searches: count_kind(search_queries, "expected_support"),
+          counterexample_searches: count_kind(search_queries, "counterexample"),
+          theory_loaded_searches: count_kind(search_queries, "theory_loaded"),
+          read_followups: length(read_followups),
+          behavioral_followups: count_kind(read_followups, "behavioral", :query_kind),
+          expected_support_followups: count_kind(read_followups, "expected_support", :query_kind),
+          counterexample_followups: count_kind(read_followups, "counterexample", :query_kind),
+          theory_loaded_followups: count_kind(read_followups, "theory_loaded", :query_kind)
+        }
+      end)
   end
 
   defp merge_paths(existing, paths) do
@@ -139,12 +141,23 @@ defmodule Rlm.Engine.Grounding.Grade do
     }
   end
 
-  defp semantic_level(_level, %{read_followups: followups, contradiction_searches: contradictions})
-       when followups >= 1 and contradictions >= 1,
+  defp semantic_level(_level, %{counterexample_followups: counterexamples, behavioral_followups: behavioral})
+       when counterexamples >= 1 and behavioral >= 1,
+        do: :verified_with_challenge
+
+  defp semantic_level(
+         _level,
+         %{counterexample_followups: counterexamples, expected_support_followups: supports}
+       )
+       when counterexamples >= 1 and supports >= 1,
        do: :verified_with_challenge
 
   defp semantic_level(_level, %{read_followups: followups, behavioral_followups: behavioral})
-       when followups >= 1 and behavioral >= 1,
+        when followups >= 1 and behavioral >= 1,
+        do: :behaviorally_supported
+
+  defp semantic_level(_level, %{read_followups: followups, expected_support_followups: supports})
+       when followups >= 1 and supports >= 1,
        do: :behaviorally_supported
 
   defp semantic_level(:read_backed_multi, %{read_followups: 0, theory_loaded_searches: theory_loaded})
@@ -173,15 +186,15 @@ defmodule Rlm.Engine.Grounding.Grade do
   defp semantic_label(:unverified), do: "unverified"
 
   defp semantic_summary(:verified_with_challenge, metrics) do
-    "Reads followed matched passages, and the search plan included at least one contradiction pass (#{metrics.contradiction_searches})."
+    "Reads followed both supporting passages and at least one read-backed counterexample or surprise-check passage (#{metrics.counterexample_followups})."
   end
 
   defp semantic_summary(:behaviorally_supported, metrics) do
-    "Reads followed matched behavioral passages (#{metrics.behavioral_followups}) instead of relying on generic file starts alone."
+    "Reads followed matched behavioral or expected-support passages (#{metrics.behavioral_followups + metrics.expected_support_followups}) instead of relying on generic file starts alone."
   end
 
   defp semantic_summary(:partially_supported, metrics) do
-    "Some reads followed matched passages (#{metrics.read_followups}), but the run did not record a contradiction pass yet."
+    "Some reads followed matched passages (#{metrics.read_followups}), but the run did not record a read-backed counterexample or surprise-check yet."
   end
 
   defp semantic_summary(:structural_only, _metrics) do

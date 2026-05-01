@@ -69,10 +69,10 @@ defmodule Rlm.Engine.FileAccessTest do
     assert result.completed?
 
     evidence = get_in(hd(result.iteration_records), [:details, "evidence"])
-    assert Enum.any?(evidence["search_queries"], &(&1["kind"] == "behavioral"))
-    assert Enum.any?(evidence["search_queries"], &(&1["kind"] == "contradiction"))
-    assert Enum.any?(evidence["read_followups"], &(&1["query_kind"] == "behavioral"))
-    assert Enum.any?(evidence["read_followups"], &(&1["query_kind"] == "contradiction"))
+    assert Enum.any?(evidence["search_queries"], &(&1["kind"] == "expected_support"))
+    assert Enum.any?(evidence["search_queries"], &(&1["kind"] == "counterexample"))
+    assert Enum.any?(evidence["read_followups"], &(&1["query_kind"] == "expected_support"))
+    assert Enum.any?(evidence["read_followups"], &(&1["query_kind"] == "counterexample"))
   end
 
   test "grep_files returns reusable hit objects" do

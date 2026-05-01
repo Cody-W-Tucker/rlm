@@ -83,10 +83,10 @@ defmodule Rlm.Engine.Prompt.IterationFeedback do
 
     cond do
       evidence.search_count >= 3 and evidence.read_followups == [] ->
-        "You have already done multiple search rounds. Stop expanding search; promote the strongest hit lines into targeted `read_file()` or `read_jsonl()` windows, update your working hypothesis from those passages, call `assess_evidence()` if you need a convergence check, then run one contradiction check before finalizing."
+        "You have already done multiple search rounds. Stop expanding search; promote the strongest hit lines into targeted `read_file()` or `read_jsonl()` windows, update your working hypothesis from those passages, call `assess_evidence()` if you need a convergence check, then run one counterexample or surprise-check before finalizing."
 
       evidence.search_count >= 3 ->
-        "You already have search hits and at least one read tied to them. Use those passages to refine `observed_examples`, note one competing interpretation, call `assess_evidence()` if you need the next best move, run one contradiction check if you have not already, then finalize from that small working set."
+        "You already have search hits and at least one read tied to them. Use those passages to refine `observed_examples`, note one competing interpretation, call `assess_evidence()` if you need the next best move, run one counterexample or surprise-check if you have not already, then finalize from that small working set."
 
       true ->
         nil
@@ -96,10 +96,10 @@ defmodule Rlm.Engine.Prompt.IterationFeedback do
   defp grounding_note(exec_result, context_bundle) do
     case Grade.assess(context_bundle, [%{details: exec_result.details || %{}}]) do
       %{grade: grade, level: :scout_only} ->
-        "Current grounding grade: #{grade} (scout-only). The previews and grep hits are useful for high-value introspection, but promote the strongest behavioral or contradiction candidates to targeted `read_file()` windows and read at least 3 relevant files before finalizing an evidence-heavy answer."
+        "Current grounding grade: #{grade} (scout-only). The previews and grep hits are useful for high-value introspection, but promote the strongest neutral or counterexample candidates to targeted `read_file()` windows and read at least 3 relevant files before finalizing an evidence-heavy answer."
 
       %{grade: grade, level: :search_only} ->
-        "Current grounding grade: #{grade} (search-only). You have searched for patterns but haven't directly inspected what the files actually contain. Stop searching. Pick the most promising behavioral or contradiction hits, preview them with `peek_hit()` or `peek_file()`, then promote at least 3 to targeted `read_file()` windows before finalizing."
+        "Current grounding grade: #{grade} (search-only). You have searched for patterns but haven't directly inspected what the files actually contain. Stop searching. Pick the most promising neutral or counterexample hits, preview them with `peek_hit()` or `peek_file()`, then promote at least 3 to targeted `read_file()` windows before finalizing."
 
       %{
         grade: grade,

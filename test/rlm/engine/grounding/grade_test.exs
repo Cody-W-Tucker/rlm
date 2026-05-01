@@ -80,7 +80,7 @@ defmodule Rlm.Engine.Grounding.GradeTest do
              Grade.assess(bundle, records)
   end
 
-  test "semantic grounding improves when reads follow matched passages and contradictions" do
+  test "semantic grounding improves only when reads follow matched passages and counterexamples" do
     bundle = %{lazy_entries: [%{label: "/tmp/history.jsonl"}]}
 
     records = [
@@ -90,14 +90,14 @@ defmodule Rlm.Engine.Grounding.GradeTest do
             "search_count" => 3,
             "search_queries" => [
               %{"id" => 1, "kind" => "behavioral", "pattern" => "start with", "source" => "grep_files"},
-              %{"id" => 2, "kind" => "contradiction", "pattern" => "however", "source" => "grep_files"}
+              %{"id" => 2, "kind" => "counterexample", "pattern" => "however", "source" => "grep_files"}
             ],
             "hit_paths" => ["/tmp/history.jsonl"],
             "read_files" => ["/tmp/history.jsonl"],
             "read_windows" => ["/tmp/history.jsonl:10:2", "/tmp/history.jsonl:20:1", "/tmp/history.jsonl:30:1"],
             "read_followups" => [
               %{"path" => "/tmp/history.jsonl", "line" => 10, "pattern" => "start with", "query_kind" => "behavioral", "text" => "start with a narrow example"},
-              %{"path" => "/tmp/history.jsonl", "line" => 20, "pattern" => "however", "query_kind" => "contradiction", "text" => "however sometimes the scope expands"}
+              %{"path" => "/tmp/history.jsonl", "line" => 20, "pattern" => "however", "query_kind" => "counterexample", "text" => "however sometimes the scope expands"}
             ]
           }
         }
@@ -105,6 +105,33 @@ defmodule Rlm.Engine.Grounding.GradeTest do
     ]
 
     assert %{semantic: %{grade: "A", level: :verified_with_challenge}} =
+             Grade.assess(bundle, records)
+  end
+
+  test "counterexample search without read-backed challenge does not earn top semantic grounding" do
+    bundle = %{lazy_entries: [%{label: "/tmp/history.jsonl"}]}
+
+    records = [
+      %{
+        details: %{
+          "evidence" => %{
+            "search_count" => 3,
+            "search_queries" => [
+              %{"id" => 1, "kind" => "behavioral", "pattern" => "start with", "source" => "grep_files"},
+              %{"id" => 2, "kind" => "counterexample", "pattern" => "however", "source" => "grep_files"}
+            ],
+            "hit_paths" => ["/tmp/history.jsonl"],
+            "read_files" => ["/tmp/history.jsonl"],
+            "read_windows" => ["/tmp/history.jsonl:10:2", "/tmp/history.jsonl:20:1", "/tmp/history.jsonl:30:1"],
+            "read_followups" => [
+              %{"path" => "/tmp/history.jsonl", "line" => 10, "pattern" => "start with", "query_kind" => "behavioral", "text" => "start with a narrow example"}
+            ]
+          }
+        }
+      }
+    ]
+
+    assert %{semantic: %{grade: "B", level: :behaviorally_supported}} =
              Grade.assess(bundle, records)
   end
 end

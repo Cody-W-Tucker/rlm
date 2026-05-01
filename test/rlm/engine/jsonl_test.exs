@@ -154,7 +154,7 @@ defmodule Rlm.Engine.JsonlTest do
              )
 
     assert result.completed?
-    assert result.answer == "run_contradiction_search|0"
+    assert result.answer == "run_counterexample_search|0"
 
     stdout = hd(result.iteration_records).stdout
     assert stdout =~ "support_summary"

@@ -32,6 +32,6 @@ defmodule Rlm.Engine.RecoveryStrategyTest do
 
     assert instruction =~ "`assess_evidence()`"
     assert instruction =~ "current hits, reads, and working hypothesis"
-    assert instruction =~ "read more, run a contradiction pass, or finalize"
+    assert instruction =~ "read more, run a counterexample pass, or finalize"
   end
 end
