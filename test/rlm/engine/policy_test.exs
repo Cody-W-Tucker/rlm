@@ -118,4 +118,65 @@ defmodule Rlm.Engine.PolicyTest do
     assert prompt =~
              "prefer parallel sub-queries with `asyncio.gather(async_llm_query(...), ...)`"
   end
+
+  test "system prompt forces synthesis on the final iteration" do
+    settings = TestHelpers.settings(%{max_iterations: 4})
+
+    run_state = %{
+      total_sub_queries: 0,
+      recovery_flags: %{
+        recovery_mode: false,
+        async_disabled: false,
+        broad_subqueries_disabled: false
+      }
+    }
+
+    prompt = Policy.system_prompt(settings, 4, run_state)
+
+    assert prompt =~ "FINAL ITERATION: Do not gather more evidence"
+    assert prompt =~ "end this iteration by calling `FINAL(...)`"
+  end
+
+  test "iteration feedback escalates toward finalization near the budget limit" do
+    settings = TestHelpers.settings(%{max_iterations: 4})
+
+    exec_result = %{
+      stdout: "",
+      stderr: "",
+      has_final: false,
+      details: %{
+        evidence: %{
+          read_files: ["/tmp/a.jsonl"],
+          read_windows: ["/tmp/a.jsonl:98:10"],
+          read_followups: [%{path: "/tmp/a.jsonl", query_kind: "behavioral"}],
+          search_count: 3,
+          search_queries: [%{kind: "behavioral"}],
+          hit_paths: ["/tmp/a.jsonl"],
+          previewed_files: ["/tmp/a.jsonl"]
+        }
+      }
+    }
+
+    run_state = %{
+      total_sub_queries: 0,
+      best_answer_so_far: "A concise synthesis is ready",
+      best_answer_reason: :stdout,
+      last_successful_subquery_result: nil
+    }
+
+    bundle = %{
+      entries: [%{label: "/tmp/a.jsonl", type: :file}],
+      lazy_entries: [%{label: "/tmp/a.jsonl", type: :file}],
+      text: "",
+      bytes: 0,
+      lazy_bytes: 10_000
+    }
+
+    feedback = Policy.iteration_feedback(exec_result, settings, 3, run_state, bundle)
+
+    assert feedback =~ "The last step inspected file content but produced no visible output"
+    assert feedback =~ "One iteration remains"
+    assert feedback =~ "Do not gather more evidence on the next turn"
+    assert feedback =~ "call `FINAL(...)` next"
+  end
 end

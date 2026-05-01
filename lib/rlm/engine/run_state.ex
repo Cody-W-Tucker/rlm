@@ -93,8 +93,8 @@ defmodule Rlm.Engine.RunState do
           String.trim(exec_result.final_value) != "" ->
         remember_best_answer(state, exec_result.final_value, :final_value)
 
-      String.trim(exec_result.stdout) != "" ->
-        remember_best_answer(state, exec_result.stdout, :stdout)
+      stdout_candidate = best_stdout_candidate(exec_result.stdout) ->
+        remember_best_answer(state, stdout_candidate, :stdout)
 
       true ->
         :ok
@@ -134,5 +134,35 @@ defmodule Rlm.Engine.RunState do
           recovery_flags: Map.merge(current.recovery_flags, recovery_flags)
       }
     end)
+  end
+
+  defp best_stdout_candidate(stdout) when not is_binary(stdout), do: nil
+
+  defp best_stdout_candidate(stdout) do
+    trimmed = String.trim(stdout)
+
+    cond do
+      trimmed == "" ->
+        nil
+
+      likely_instrumentation_output?(trimmed) ->
+        nil
+
+      true ->
+        trimmed
+    end
+  end
+
+  defp likely_instrumentation_output?(stdout) do
+    lines = String.split(stdout, "\n", trim: true)
+
+    heading_lines = Enum.count(lines, &String.starts_with?(&1, "=== "))
+
+    file_excerpt_lines =
+      Enum.count(lines, fn line ->
+        Regex.match?(~r/^\d+:\s/, line) or Regex.match?(~r/^\/?[^\s]+:\d+:\s/, line)
+      end)
+
+    heading_lines >= 2 or (heading_lines >= 1 and file_excerpt_lines >= 2)
   end
 end

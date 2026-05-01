@@ -25,6 +25,20 @@ defmodule Rlm.Engine.CoreRuntimeTest do
     refute result.completed?
   end
 
+  test "does not promote raw evidence logs to the best partial answer" do
+    settings = TestHelpers.settings(%{max_iterations: 1})
+    bundle = %{entries: [], text: "abcdef", bytes: 6}
+
+    assert {:ok, result} =
+             Engine.run("loop forever", bundle, settings, Rlm.TestEvidenceLoopProvider)
+
+    assert result.status == :max_iterations
+    refute result.completed?
+    assert result.answer == "The run reached its iteration limit before it could produce a reliable answer."
+    assert result.best_answer_reason == nil
+    assert hd(result.iteration_records).stdout =~ "=== KEY EXAMPLE 1 ==="
+  end
+
   test "strips malformed fenced responses before execution" do
     settings = TestHelpers.settings(%{max_iterations: 1})
     bundle = %{entries: [], text: "abcdef", bytes: 6}

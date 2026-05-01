@@ -39,6 +39,24 @@ defmodule Rlm.TestLoopProvider do
   end
 end
 
+defmodule Rlm.TestEvidenceLoopProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(_history, _system_prompt, _settings) do
+    {:ok,
+     %{
+       text:
+         "```python\nprint('=== KEY EXAMPLE 1 ===')\nprint('1: {\"title\": \"Assess and plan\"}')\nprint('=== KEY EXAMPLE 2 ===')\nprint('/tmp/corpus.jsonl:16: {\"title\": \"Review and plan\"}')\n```",
+       input_tokens: 0,
+       output_tokens: 0
+     }}
+  end
+
+  def complete_subquery(_sub_context, _instruction, _settings) do
+    {:ok, %{text: "unused", input_tokens: 0, output_tokens: 0}}
+  end
+end
+
 defmodule Rlm.TestAsyncProvider do
   @behaviour Rlm.Providers.Provider
 

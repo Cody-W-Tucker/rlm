@@ -6,6 +6,7 @@ defmodule Rlm.Engine.Prompt.IterationFeedback do
 
   def build(exec_result, settings, iteration, run_state, context_bundle) do
     parts = []
+    remaining_iterations = settings.max_iterations - iteration
 
     parts =
       if exec_result.stdout != "",
@@ -50,16 +51,20 @@ defmodule Rlm.Engine.Prompt.IterationFeedback do
 
     consolidation_note = consolidation_note(exec_result)
     grounding_note = grounding_note(exec_result, context_bundle)
+    no_output_note = no_output_note(exec_result)
+    endgame_note = endgame_note(exec_result, run_state, remaining_iterations)
 
     (parts ++
        [
-         "Iteration #{iteration}/#{settings.max_iterations}. Sub-queries used: #{run_state.total_sub_queries}/#{settings.max_sub_queries}.",
-         best_answer_note,
-         grounding_note,
-         consolidation_note,
-         subquery_candidate_note,
-         "Continue processing or call FINAL() when you have the answer."
-       ])
+          "Iteration #{iteration}/#{settings.max_iterations}. Sub-queries used: #{run_state.total_sub_queries}/#{settings.max_sub_queries}.",
+          best_answer_note,
+          grounding_note,
+          consolidation_note,
+          no_output_note,
+          endgame_note,
+          subquery_candidate_note,
+          "Continue processing or call FINAL() when you have the answer."
+        ])
     |> Enum.reject(&is_nil/1)
     |> Enum.join("\n\n")
   end
@@ -109,5 +114,39 @@ defmodule Rlm.Engine.Prompt.IterationFeedback do
       nil ->
         nil
     end
+  end
+
+  defp no_output_note(exec_result) do
+    evidence = GroundingPolicy.evidence(exec_result.details || %{})
+
+    if exec_result.stdout == "" and exec_result.stderr == "" and
+         (evidence.read_files != [] or evidence.read_windows != [] or evidence.read_followups != []) do
+      "The last step inspected file content but produced no visible output. `read_file()` returns text but does not print by itself; assign the result, then `print(...)` it for inspection or synthesize and call `FINAL(...)`."
+    end
+  end
+
+  defp endgame_note(exec_result, run_state, remaining_iterations) do
+    cond do
+      remaining_iterations <= 0 ->
+        "No iterations remain after this one. Do not gather more evidence now. Synthesize from what you already inspected and call `FINAL(...)`."
+
+      remaining_iterations == 1 and ready_to_finalize?(exec_result, run_state) ->
+        "One iteration remains. Do not gather more evidence on the next turn unless fixing a specific contradiction. Synthesize from the current evidence and call `FINAL(...)` next."
+
+      remaining_iterations == 1 ->
+        "One iteration remains. Avoid broad search expansion. On the next turn, prefer synthesis and `FINAL(...)` over more evidence gathering unless a single contradiction still needs checking."
+
+      remaining_iterations == 2 and ready_to_finalize?(exec_result, run_state) ->
+        "Two iterations remain. You already have enough material to converge. Use at most one consolidation pass, then call `FINAL(...)`; do not keep expanding the search space."
+
+      true ->
+        nil
+    end
+  end
+
+  defp ready_to_finalize?(exec_result, run_state) do
+    evidence = GroundingPolicy.evidence(exec_result.details || %{})
+
+    is_binary(run_state.best_answer_so_far) or evidence.read_followups != [] or evidence.read_files != []
   end
 end

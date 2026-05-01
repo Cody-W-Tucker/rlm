@@ -10,6 +10,18 @@ defmodule Rlm.Engine.Prompt.Base do
         do: "Sub-queries use #{settings.sub_model}.",
         else: "Sub-queries use the root model."
 
+    endgame_note =
+      cond do
+        remaining_iterations == 1 ->
+          "FINAL ITERATION: Do not gather more evidence. Do not run new search or read helpers unless you are resolving one specific contradiction in evidence already inspected. Synthesize from the evidence already in hand and end this iteration by calling `FINAL(...)`."
+
+        remaining_iterations == 2 ->
+          "ENDGAME: You have one follow-up turn after this. Stop expanding the search space, consolidate the evidence you already inspected, and prepare to call `FINAL(...)` on the next iteration."
+
+        true ->
+          nil
+      end
+
     """
     You are a Recursive Language Model (RLM) agent. You process arbitrarily large contexts by writing Python code in a persistent REPL.
 
@@ -79,6 +91,8 @@ defmodule Rlm.Engine.Prompt.Base do
     - For synthesis-heavy questions over large corpora, prefer a brief structured evidence pass first: collect observed examples, note competing interpretations, run one verification search, and keep a confidence estimate for each trait before writing prose.
     - Store intermediate results in variables because the REPL is persistent.
     - Call FINAL() as soon as you have a useful answer; do not spend budget polishing unnecessarily.
+    - On the final iteration, synthesize from the current evidence and call `FINAL(...)`; do not spend that turn gathering more evidence.
+    #{endgame_note}
     #{strategy_constraints}
     """
   end
