@@ -83,8 +83,8 @@ defmodule Rlm.Engine.Prompt.IterationFeedback do
     read_units = max(length(evidence.read_files), length(evidence.read_windows))
 
     cond do
-      evidence.search_count >= 6 and read_units < 2 ->
-        "You are still scouting after #{evidence.search_count} search rounds with only #{read_units} promoted read(s). Stop searching. Pick the two strongest hit-backed passages, inspect them directly with `read_file()` or `read_jsonl()`, update `working_claim`, then decide whether one more read or `FINAL(...)` is justified."
+      evidence.search_count >= 3 and read_units < 3 ->
+        "You are still scouting after #{evidence.search_count} search rounds with only #{read_units} promoted read(s). Stop searching. Pick the three strongest hit-backed passages, inspect them directly with `read_file()` or `read_jsonl()`, update `working_claim`, then decide whether one more read or `FINAL(...)` is justified."
 
       evidence.search_count >= 3 and evidence.read_followups == [] ->
         "You have already done multiple search rounds. Stop expanding search; promote the strongest hit lines into targeted `read_file()` or `read_jsonl()` windows, draft a tentative claim from those passages, derive expected-nearby and weakening patterns from that claim, call `assess_evidence()` if you need a convergence check, then run one challenge pass before finalizing."

@@ -5,8 +5,8 @@ defmodule Rlm.Engine.Grounding.Policy do
 
   @minimum_multi_file_reads 3
   @minimum_promoted_read_windows 3
-  @early_search_round_threshold 6
-  @late_search_round_threshold 10
+  @early_search_round_threshold 3
+  @late_search_round_threshold 6
   def hint(context_bundle) do
     lazy_file_count = length(Map.get(context_bundle, :lazy_entries, []))
 
@@ -42,9 +42,9 @@ defmodule Rlm.Engine.Grounding.Policy do
             {:error,
              "Grounding grade #{grade} is still too weak after #{search_count} search rounds. Stop searching now and promote at least #{@minimum_promoted_read_windows} strongest hits into targeted `read_file()` or `read_jsonl()` windows before taking another broad retrieval step."}
 
-          promoted_reads < 2 ->
+          promoted_reads < @minimum_promoted_read_windows ->
             {:error,
-             "Grounding grade #{grade} is drifting after #{search_count} search rounds with only #{promoted_reads} promoted read(s). Stop expanding the search space and inspect the strongest hits directly before continuing."}
+             "Grounding grade #{grade} is drifting after #{search_count} search rounds with only #{promoted_reads} promoted read(s). Stop expanding the search space and promote at least #{@minimum_promoted_read_windows} strongest hits into targeted `read_file()` or `read_jsonl()` windows before continuing."}
 
           true ->
             :ok

@@ -34,7 +34,7 @@ defmodule Rlm.Engine.Grounding.PolicyTest do
       %{
         details: %{
           "evidence" => %{
-            "search_count" => 6,
+            "search_count" => 3,
             "hit_paths" => ["/tmp/a.md"],
             "read_files" => ["/tmp/a.md"],
             "read_windows" => ["/tmp/a.md:1:20"],
@@ -46,6 +46,7 @@ defmodule Rlm.Engine.Grounding.PolicyTest do
 
     assert {:error, message} = Policy.validate_search_progress(bundle, records)
     assert message =~ "Stop expanding the search space"
+    assert message =~ "promote at least 3 strongest hits"
   end
 
   test "validate_final_answer still rejects generic file-start reads" do

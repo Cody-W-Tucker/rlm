@@ -638,7 +638,11 @@ defmodule Rlm.TestJsonlSearchPromotionProvider do
   @behaviour Rlm.Providers.Provider
 
   def generate_code(history, _system_prompt, _settings) do
-    if Enum.any?(history, &String.contains?(&1.content, "Stop expanding search")) do
+    if Enum.any?(
+         history,
+         &(String.contains?(&1.content, "Stop expanding search") or
+             String.contains?(&1.content, "insufficient_grounding"))
+       ) do
       {:ok,
        %{
          text: """
@@ -663,6 +667,49 @@ defmodule Rlm.TestJsonlSearchPromotionProvider do
          beta = grep_jsonl_fields(path, r".*", r"beta", limit=5)
          gamma = grep_jsonl_fields(path, r".*", r"gamma", limit=5)
          print(alpha, beta, gamma)
+         ```
+         """,
+         input_tokens: 0,
+         output_tokens: 0
+       }}
+    end
+  end
+
+  def complete_subquery(_sub_context, _instruction, _settings) do
+    {:ok, %{text: "unused", input_tokens: 0, output_tokens: 0}}
+  end
+end
+
+defmodule Rlm.TestJsonlLateSearchRecoveryProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(history, _system_prompt, _settings) do
+    if Enum.any?(history, &String.contains?(&1.content, "insufficient_grounding")) do
+      {:ok,
+       %{
+         text: """
+         ```python
+         for path in list_files()[:3]:
+             hits = grep_jsonl_fields(path, r"messages\[[0-9]+\]\.content", r"alpha|beta|gamma", limit=1)
+             if hits:
+                 print(read_jsonl(path, offset=hits[0].line, limit=1))
+         FINAL("Recovered from 18 search-only JSONL rounds")
+         ```
+         """,
+         input_tokens: 0,
+         output_tokens: 0
+       }}
+    else
+      {:ok,
+       %{
+         text: """
+         ```python
+         patterns = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta"]
+         for path in list_files()[:3]:
+             for pat in patterns:
+                 hits = grep_jsonl_fields(path, r"messages\[[0-9]+\]\.content", pat, limit=1)
+                 if hits:
+                     print(pat, hits[0])
          ```
          """,
          input_tokens: 0,

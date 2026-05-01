@@ -127,6 +127,46 @@ defmodule Rlm.Engine.JsonlTest do
     assert length(get_in(second, [:details, "evidence", "read_windows"])) >= 3
   end
 
+  test "late search-only JSONL loops recover by promoting reads on the next iteration" do
+    tmp = TestHelpers.temp_dir("rlm-engine-jsonl-late-promotion")
+    on_exit(fn -> File.rm_rf!(tmp) end)
+
+    files = [
+      {"alpha.jsonl", [%{"messages" => [%{"role" => "user", "content" => "alpha decision evidence"}]}]},
+      {"beta.jsonl", [%{"messages" => [%{"role" => "user", "content" => "beta learning evidence"}]}]},
+      {"gamma.jsonl", [%{"messages" => [%{"role" => "user", "content" => "gamma adaptation evidence"}]}]}
+    ]
+
+    Enum.each(files, fn {name, records} ->
+      lines = Enum.map_join(records, "\n", &Jason.encode!/1) <> "\n"
+      File.write!(Path.join(tmp, name), lines)
+    end)
+
+    settings = TestHelpers.settings(%{max_iterations: 2})
+
+    assert {:ok, bundle} = Loader.load({:path, tmp}, settings)
+
+    assert {:ok, result} =
+             Engine.run(
+               "extract grounded profile evidence",
+               bundle,
+               settings,
+               Rlm.TestJsonlLateSearchRecoveryProvider
+             )
+
+    assert result.completed?
+    assert result.answer == "Recovered from 18 search-only JSONL rounds"
+    assert result.iterations == 2
+    assert result.grounding.grade == "A"
+    assert Enum.any?(result.failure_history, &(&1.class == :insufficient_grounding))
+
+    [first, second] = result.iteration_records
+    assert get_in(first, [:details, "evidence", "search_count"]) == 18
+    assert get_in(first, [:details, "evidence", "read_files"]) == []
+    assert get_in(first, [:details, "evidence", "read_windows"]) == []
+    assert length(get_in(second, [:details, "evidence", "read_files"])) == 3
+  end
+
   test "assess_evidence recommends the next convergence step" do
     tmp = TestHelpers.temp_dir("rlm-engine-jsonl-assess-evidence")
     on_exit(fn -> File.rm_rf!(tmp) end)
