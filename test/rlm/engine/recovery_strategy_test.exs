@@ -31,7 +31,8 @@ defmodule Rlm.Engine.RecoveryStrategyTest do
     instruction = Strategy.recovery_instruction(%Failure{class: :insufficient_grounding})
 
     assert instruction =~ "`assess_evidence()`"
-    assert instruction =~ "current hits, reads, and working hypothesis"
+    assert instruction =~ "current hits, reads, and tentative claim"
     assert instruction =~ "read more, run a counterexample pass, or finalize"
+    assert instruction =~ "derive weakening patterns"
   end
 end

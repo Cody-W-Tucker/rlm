@@ -56,7 +56,7 @@ defmodule Rlm.Engine.PolicyTest do
     assert metadata =~ "Likely line-delimited structured records such as JSONL or event/chat history."
     assert metadata =~ "Discover what is actually there"
     assert metadata =~ "hunting for keywords"
-    assert metadata =~ "contradiction check"
+    assert metadata =~ "weakening or boundary-check pass"
   end
 
   test "system prompt requires scouting before chunking" do
@@ -92,7 +92,7 @@ defmodule Rlm.Engine.PolicyTest do
     assert prompt =~ "`read_jsonl(path, offset=1, limit=20)`"
     assert prompt =~ "`sample_jsonl(path, limit=20)`"
     assert prompt =~ "`grep_jsonl_fields(path, field_pattern, text_pattern=\".*\", limit=20)`"
-    assert prompt =~ "search for concrete behavioral markers, local examples, and contradiction cues"
+    assert prompt =~ "first search neutral behavioral markers and nearby phrasing"
     assert prompt =~ "`grep_open(pattern, limit=10, window=12)`"
     assert prompt =~ "`assess_evidence(question, hits=None, reads=None, hypothesis=None)`"
     assert prompt =~ "prefer `peek_hit(hit)` or `open_hit(hit)`"
@@ -107,12 +107,13 @@ defmodule Rlm.Engine.PolicyTest do
     assert prompt =~ "do not force every claim into a `(from /path/to/file)` label"
     assert prompt =~ "If a concept is synthesized across multiple notes, say so"
     assert prompt =~ "Prefer `peek_file()` before `read_file()`"
-    assert prompt =~ "search behavioral markers, read surrounding passages, form a working hypothesis"
+    assert prompt =~ "run a neutral retrieval pass, read surrounding passages, form a tentative claim"
     assert prompt =~ "usually 3-4 direct reads"
     assert prompt =~ "Use `assess_evidence()` after a few searches"
     assert prompt =~ "Keep an explicit verification loop in variables"
+    assert prompt =~ "`working_claim`, `expected_nearby_patterns`, `weakening_patterns`"
     assert prompt =~ "Search for context that is close to evidence"
-    assert prompt =~ "Let inspected passages update the hypothesis"
+    assert prompt =~ "Let inspected passages update the claim"
     assert prompt =~ "prefer a brief structured evidence pass first"
 
     assert prompt =~
@@ -135,6 +136,8 @@ defmodule Rlm.Engine.PolicyTest do
 
     assert prompt =~ "FINAL ITERATION: Do not gather more evidence"
     assert prompt =~ "end this iteration by calling `FINAL(...)`"
+    assert prompt =~ "expected-nearby patterns"
+    assert prompt =~ "weakening patterns"
   end
 
   test "iteration feedback escalates toward finalization near the budget limit" do

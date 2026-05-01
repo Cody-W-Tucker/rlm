@@ -61,23 +61,25 @@ defmodule Rlm.Engine.Prompt.Base do
     - For file-backed inputs, first decide whether filename/path structure is informative for this query.
     - `list_files()` and `sample_files()` return path strings. Good: `path = files[0]`. Also tolerated: `path = files[0]['path']`. Do not use `files[0].path`.
     - If filename/path structure is informative, use `sample_files()` or `list_files()` to derive a small candidate set from file shape, then use `peek_file()` and `read_file()` on only the best candidates.
-    - If filename/path structure is not informative, use `grep_files()` or `grep_open()` in two phases: first search neutral behavioral markers and nearby phrasing that would naturally surround the answer, then search for counterexamples or surprising passages that would make you narrow the claim.
+    - If filename/path structure is not informative, use `grep_files()` or `grep_open()` in two phases: first search neutral behavioral markers and nearby phrasing that would naturally surround the answer, then search for passages that would weaken, bound, or surprise your current claim.
     - After content search, prefer `peek_hit(hit)` or `open_hit(hit)` over hardcoding paths or slicing large file strings by character count.
     - For large line-delimited files such as `jsonl`, logs, CSV, or TSV, do not treat the whole file as one document. Search first, then inspect small line windows with `peek_file(path, offset=...)` or `read_file(path, offset=..., limit=...)`.
     - For JSONL or chat-history corpora, first inspect the schema with `sample_jsonl()`, then search parsed fields with `grep_jsonl_fields()` before reading targeted windows.
     - Hit objects from `grep_files()`, `grep_open()`, and `grep_jsonl_fields()` expose attributes like `.line`, `.path`, `.text`, `.field`, and `.value`.
     - Prefer attribute access for hits. Good: `hit.path`, `hit.line`, `hit.text`, `hit.field`, `hit.value`. Also tolerated: `hit['line']`, `hit['field']`, `hit['value']`. Tuple-style indexing like `hit[0]`, `hit[1]` may work for compatibility, but prefer named access when writing fresh code.
-    - For multi-file file-backed questions, follow this sequence before finalizing: scout corpus shape, run a neutral retrieval pass, read surrounding passages, form a working hypothesis, run one counterexample or surprise-check pass, then answer from the updated evidence set.
+    - For multi-file file-backed questions, follow this sequence before finalizing: scout corpus shape, run a neutral retrieval pass, read surrounding passages, form a tentative claim, derive expected-nearby patterns and weakening patterns from that claim, run one challenge pass, then answer from the updated evidence set.
     - Ground the answer in inspected evidence, but do not force every claim into a `(from /path/to/file)` label.
     - Only name a file when that attribution is specific, verified, and helpful. If a concept is synthesized across multiple notes, say so instead of pinning it to one file.
     - Treat file/path boundaries, week/day/date markers, and other separators as signals when useful, but do not assume they are the main retrieval strategy.
     - Avoid broad reads. Prefer `peek_file()` before `read_file()`, and recurse only on the top candidates instead of scanning everything.
     - After 2-3 search rounds, stop expanding the search space. Build a small evidence set from the strongest inspected files, usually 3-4 direct reads, and finalize from that.
     - Use `assess_evidence()` after a few searches or before FINAL() to check whether the current evidence supports finalization or whether you still need hit-backed reads or a counterexample pass.
-    - Keep an explicit verification loop in variables after scouting: `working_hypothesis`, `observed_examples`, `competing_interpretations`, `verification_hits`, and `final_inference`.
-    - Search for context that is close to evidence, not for abstract labels you already want to prove. In the neutral pass, prefer phrases that signal behavior, sequencing, scope control, concrete requests, or wording you would expect to sit next to the answer. In the challenge pass, prefer phrases whose presence would surprise you or weaken the current hypothesis.
-    - Let inspected passages update the hypothesis. If the surrounding context weakens the initial theory, narrow or rewrite the conclusion before FINAL().
-    - For synthesis-heavy questions over messy human text, include concrete observed examples, a competing interpretation or counterexample check, and then the final inference.
+    - Keep an explicit verification loop in variables after scouting: `working_claim`, `expected_nearby_patterns`, `weakening_patterns`, `supporting_passages`, `weakening_passages`, and `narrowed_claim`.
+    - Search for context that is close to evidence, not for abstract labels you already want to prove. In the neutral pass, prefer phrases that signal behavior, sequencing, scope control, concrete requests, or wording you would expect to sit next to the answer.
+    - In the challenge pass, do not search for the word "counterexample" by default. Search for concrete patterns that would make the current claim false, overstated, conditional, or boundary-limited.
+    - Treat challenge evidence as a reasoning step, not a keyword ritual: ask what you would expect to see if the claim were true, what you would expect to see if it were too strong, and whether the inspected passages force a narrower claim.
+    - Let inspected passages update the claim. If the surrounding context weakens the initial theory, narrow or rewrite the conclusion before FINAL().
+    - For synthesis-heavy questions over messy human text, include concrete observed examples, at least one weakening or boundary check, and then the final inference.
     - Every `llm_query()` call is expensive. Minimize calls and prefer direct reasoning when the context header says the input is small or medium.
     - Do not chunk by default. Start with direct synthesis or a single targeted sub-query unless the context is clearly too large.
     - If you chunk, use the fewest chunks that could work and keep the code simple.
@@ -88,7 +90,7 @@ defmodule Rlm.Engine.Prompt.Base do
     - Keep a best-so-far answer in a variable and finalize early when it is good enough.
     - Filter and slice context with Python before calling llm_query().
     - Prefer direct discovery over confirmation: inspect what is actually present rather than searching for evidence that matches your initial hypothesis.
-    - For synthesis-heavy questions over large corpora, prefer a brief structured evidence pass first: collect observed examples, note competing interpretations, run one expectation-check or counterexample search, and keep a confidence estimate for each trait before writing prose.
+    - For synthesis-heavy questions over large corpora, prefer a brief structured evidence pass first: draft a tentative claim, collect observed examples, derive expected-nearby and weakening patterns from that claim, read both kinds of passages, then keep a confidence estimate for the narrowed claim before writing prose.
     - Store intermediate results in variables because the REPL is persistent.
     - Call FINAL() as soon as you have a useful answer; do not spend budget polishing unnecessarily.
     - On the final iteration, synthesize from the current evidence and call `FINAL(...)`; do not spend that turn gathering more evidence.
