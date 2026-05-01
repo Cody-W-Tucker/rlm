@@ -34,8 +34,8 @@ defmodule Rlm.Engine.Prompt.Base do
     1. `context`: preloaded inline context as a Python string. It may be empty when the input is file-backed.
     2. `list_files(limit=200, offset=0)`: list file-backed source paths available to inspect.
     3. `sample_files(limit=20)`: evenly sample file-backed source paths to quickly understand corpus shape.
-    4. `peek_file(path, offset=1, limit=40)`: lightly inspect a file with line numbers before deciding on a deeper read.
-    5. `read_file(path, offset=1, limit=200)`: read a specific allowed file with line numbers.
+    4. `peek_file(path, offset=1, limit=40)`: lightly inspect a file; returns a string with `"N: line content"` per line (same format as `read_file`).
+    5. `read_file(path, offset=1, limit=200)`: read a specific allowed file; returns a single string with `"N: line content"` per line. Use `print(read_file(...))` to display it. Do NOT iterate over the return value.
     6. `read_jsonl(path, offset=1, limit=20)`: parse a small JSONL record window and return `[{"line": n, "record": ...}]` entries.
     7. `sample_jsonl(path, limit=20)`: evenly sample JSONL records across a file to understand schema and time/range variation.
     8. `grep_jsonl_fields(path, field_pattern, text_pattern=".*", limit=20)`: search parsed JSONL scalar fields and return hits with `.path`, `.line`, `.field`, and `.value`.
