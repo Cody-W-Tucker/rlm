@@ -3,7 +3,7 @@ defmodule Rlm.Engine.Grounding.PolicyTest do
 
   alias Rlm.Engine.Grounding.Policy
 
-  test "rejects repeated search with generic file-start reads" do
+  test "search progress no longer blocks continuation" do
     bundle = %{lazy_entries: [%{label: "/tmp/a.md"}, %{label: "/tmp/b.md"}, %{label: "/tmp/c.md"}]}
 
     records = [
@@ -20,7 +20,34 @@ defmodule Rlm.Engine.Grounding.PolicyTest do
       }
     ]
 
-    assert {:error, message} = Policy.validate_search_progress(bundle, records)
+    assert :ok = Policy.validate_search_progress(bundle, records)
+  end
+
+  test "validate_final_answer still rejects generic file-start reads" do
+    bundle = %{lazy_entries: [%{label: "/tmp/a.md"}, %{label: "/tmp/b.md"}, %{label: "/tmp/c.md"}]}
+
+    records = [
+      %{
+        details: %{
+          "evidence" => %{
+            "search_count" => 3,
+            "hit_paths" => ["/tmp/a.md"],
+            "read_files" => ["/tmp/a.md", "/tmp/b.md", "/tmp/c.md"],
+            "read_windows" => ["/tmp/a.md:1:100", "/tmp/b.md:1:100", "/tmp/c.md:1:100"],
+            "read_followups" => []
+          }
+        }
+      }
+    ]
+
+    assert {:error, message} =
+             Policy.validate_final_answer(
+               bundle,
+               "The user does X.",
+               hd(records).details,
+               records
+             )
+
     assert message =~ "generic file-start reads"
   end
 

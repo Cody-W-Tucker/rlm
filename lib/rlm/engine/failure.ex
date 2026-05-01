@@ -223,7 +223,7 @@ defmodule Rlm.Engine.Failure do
 
   defp advice_for(:insufficient_grounding),
     do:
-      "the final answer relied on scouting evidence that was too weak for a multi-file corpus. Read the strongest candidate files directly before finalizing."
+      "the final answer relied on scouting evidence that was too weak for the corpus. Promote the strongest search hits into targeted `read_file()` or `read_jsonl()` windows before finalizing."
 
   defp advice_for(:subquery_budget_exhausted),
     do: "the run exhausted its sub-query budget. Finalize from the best answer collected so far."

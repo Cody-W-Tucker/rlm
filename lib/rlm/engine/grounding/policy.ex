@@ -41,12 +41,12 @@ defmodule Rlm.Engine.Grounding.Policy do
     end
   end
 
-  def validate_search_progress(context_bundle, iteration_records) do
-    if file_backed?(context_bundle) do
-      validate_search_promotion(context_bundle, iteration_records)
-    else
-      :ok
-    end
+  def validate_search_progress(_context_bundle, _iteration_records) do
+    # Search-promotion checks now run only during validate_final_answer (via
+    # validate_grounding_grade).  Blocking :continue was counterproductive:
+    # the model needs further iterations to act on the feedback nudge that
+    # tells it to stop searching and start reading.
+    :ok
   end
 
   def file_backed?(context_bundle), do: length(Map.get(context_bundle, :lazy_entries, [])) > 0
