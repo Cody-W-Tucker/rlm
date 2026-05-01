@@ -7,13 +7,6 @@ defmodule Rlm.Engine.Grounding.Policy do
   @minimum_promoted_read_windows 3
   @early_search_round_threshold 6
   @late_search_round_threshold 10
-  @minimum_search_echo_phrases 3
-  @minimum_unsupported_echo_ratio 0.5
-  @low_signal_search_terms MapSet.new(~w(
-    after before choice choices counterexample decision decide evidence finalize first inspect
-    option options path paths prefer read scout search viable with
-  ))
-
   def hint(context_bundle) do
     lazy_file_count = length(Map.get(context_bundle, :lazy_entries, []))
 
@@ -29,8 +22,7 @@ defmodule Rlm.Engine.Grounding.Policy do
   def validate_final_answer(context_bundle, final_answer, details, iteration_records \\ []) do
     if file_backed?(context_bundle) do
       with :ok <- validate_cited_paths(final_answer, details),
-           :ok <- validate_grounding_grade(context_bundle, iteration_records),
-           :ok <- validate_semantic_answer(final_answer, iteration_records) do
+           :ok <- validate_grounding_grade(context_bundle, iteration_records) do
         :ok
       end
     else
@@ -204,31 +196,6 @@ defmodule Rlm.Engine.Grounding.Policy do
     end
   end
 
-  defp validate_semantic_answer(final_answer, iteration_records) do
-    search_phrases = extract_search_phrases(iteration_records)
-    echoed = phrases_echoed_in_answer(search_phrases, final_answer)
-
-    if length(echoed) < @minimum_search_echo_phrases do
-      :ok
-    else
-      followups = read_followups(iteration_records)
-
-      unsupported =
-        Enum.reject(echoed, fn phrase ->
-          Enum.any?(followups, &followup_supports_phrase?(&1, phrase))
-        end)
-
-      ratio = length(unsupported) / max(length(echoed), 1)
-
-      if ratio >= @minimum_unsupported_echo_ratio do
-        {:error,
-         "Final answer echoes search scaffolding (#{Enum.take(unsupported, 5) |> Enum.join(", ")}) without read-backed support. Ground the claims in inspected passages or rephrase using only what the reads confirmed."}
-      else
-        :ok
-      end
-    end
-  end
-
   defp normalize_entries(entries) do
     Enum.map(entries, &normalize_entry/1)
   end
@@ -259,58 +226,6 @@ defmodule Rlm.Engine.Grounding.Policy do
       "query_kind" -> :query_kind
       _ -> key
     end
-  end
-
-  defp read_followups(iteration_records) do
-    iteration_records
-    |> Enum.flat_map(fn record ->
-      record
-      |> Map.get(:details, %{})
-      |> evidence()
-      |> Map.get(:read_followups, [])
-    end)
-  end
-
-  defp extract_search_phrases(iteration_records) do
-    iteration_records
-    |> Enum.flat_map(fn record ->
-      record
-      |> Map.get(:details, %{})
-      |> evidence()
-      |> Map.get(:search_patterns, [])
-    end)
-    |> Enum.flat_map(&extract_keywords_from_pattern/1)
-    |> Enum.uniq()
-  end
-
-  defp extract_keywords_from_pattern(pattern) when is_binary(pattern) do
-    # Strip JSONL field prefixes like "jsonl:user_text::"
-    stripped = Regex.replace(~r/^jsonl:[^:]+::/, pattern, "")
-
-    # Strip regex syntax, keeping bare words and multi-word phrases
-    stripped
-    |> String.replace(~r/\(\?[imsxu]*\)/, "")
-    |> String.replace(~r/\\[bBdDwWsS]/, " ")
-    |> String.replace(~r/[|(){}[\]\\^$*+?.]+/, " ")
-    |> String.split(~r/\s+/, trim: true)
-    |> Enum.reject(&(String.length(&1) < 4))
-    |> Enum.map(&String.downcase/1)
-    |> Enum.reject(&MapSet.member?(@low_signal_search_terms, &1))
-  end
-
-  defp extract_keywords_from_pattern(_), do: []
-
-  defp phrases_echoed_in_answer(search_phrases, answer) do
-    lowered = String.downcase(answer)
-
-    Enum.filter(search_phrases, fn phrase ->
-      String.contains?(lowered, phrase)
-    end)
-  end
-
-  defp followup_supports_phrase?(followup, phrase) do
-    followup_text = String.downcase(to_string(Map.get(followup, :text, "")))
-    String.contains?(followup_text, phrase)
   end
 
   defp single_line_delimited_source?(context_bundle) do
