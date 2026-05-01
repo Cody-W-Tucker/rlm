@@ -6,7 +6,7 @@ compatibility: opencode
 
 # Post-Mortem Review Skill
 
-This workflow turns saved run telemetry into concrete feature ideas, error-handling improvements, and regression test proposals.
+This workflow turns saved run telemetry into a ranked review of what is actually worth guarding against, what is just residual noise, and what new features or control-loop changes are justified.
 
 ## Goal
 
@@ -15,6 +15,13 @@ Use the structured artifact from `bin/rlm-postmortem-json` to research recurring
 Treat `tmp/postmortem.json` as the canonical local artifact. If it does not exist yet, create it with a full run so it contains the full historical baseline. If it already exists, refresh it incrementally so the review loop stays cheap over time.
 
 The reviewing agent must not stop at category summaries. It must inspect representative traces, inspect current code and tests, and synthesize concrete recommendations.
+
+The point is not just to name failures. The point is to surface:
+
+- which failures make answers less trustworthy
+- which failures mostly waste work or trigger visible crashes
+- which failures are already acceptably handled and should not dominate the roadmap
+- which patterns suggest a worthwhile new feature, helper, or policy change
 
 ## Inputs
 
@@ -39,6 +46,13 @@ Important fields in the artifact:
 - `runs[*].tests[*].pointers`
 - `runs[*].improvements[*].pointers`
 
+Useful interpretation notes:
+
+- `review_queue` is a starting point, not the final prioritization.
+- `category_counts` can exaggerate noisy categories that are already well-contained.
+- `runs[*]` is where you determine whether something is recent, repeated, recovered cleanly, or still producing bad answers.
+- A completed run with failure history may still matter if it exposes an untrustworthy reasoning trace.
+
 Each pointer should be treated as a trace anchor, not as the full explanation:
 
 - `run_path`
@@ -55,12 +69,18 @@ For each selected review queue item:
 2. Read the relevant current implementation files.
 3. Search for existing tests that already cover the behavior.
 4. Decide whether the issue is still reachable in the current architecture.
-5. Produce concrete proposals in three buckets:
+5. Decide what kind of problem it really is:
+   - trustworthiness risk: the run can produce a plausible but weakly grounded or misleading answer
+   - reliability / efficiency risk: the run wastes time, crashes loudly, or misuses helpers, but usually fails visibly
+   - acceptable residual noise: the run hits a recoverable issue but the current behavior is mostly fine
+6. Produce concrete proposals in three buckets:
    - feature ideas
    - error-handling or recovery ideas
    - regression test ideas
 
 Do not restate telemetry without code research.
+
+Do not let technical category language dominate the analysis. Categories are only hints. The real question is whether the underlying behavior is worth spending engineering effort on.
 
 ## Selection Rules
 
@@ -69,6 +89,14 @@ Start with:
 - all `high` priority review queue items
 - any `medium` item with repeated runs
 - any item tied to safety, grounding, recovery, or user-visible correctness
+
+Then immediately re-rank them using these questions:
+
+1. Does this make answers not trustworthy?
+2. Is it still showing up in recent runs?
+3. Is the current code only catching it late instead of controlling it early?
+4. Is this mostly noisy telemetry for something already well-recovered?
+5. Does the pattern point to a missing capability or helper that would make future runs meaningfully better?
 
 Lower-priority items can be marked `monitor` if the current code already appears to contain equivalent coverage.
 
@@ -81,8 +109,12 @@ The reviewing agent should gather enough evidence to answer:
 3. Is the failure still reachable?
 4. Is there already equivalent protection in tests or policy?
 5. What is the smallest durable improvement?
+6. Is this a silent answer-quality problem, a loud runtime/reliability problem, or acceptable residual noise?
+7. If this were fixed, would it give us a better guardrail, a better control loop, or a genuinely useful new feature?
 
 Prefer behavior-level conclusions over historical prompt-specific conclusions.
+
+Prefer answers that help the maintainer know what makes sense to work on next.
 
 ## Promotion Rules
 
@@ -104,7 +136,18 @@ Guidance:
 - Use `stale` when the architecture no longer reaches the failure mode.
 - Use `dismiss` for noise or non-actionable one-offs.
 
+Also assign an implementation priority mindset when you explain recommendations:
+
+- `P0`: active trustworthiness risk
+- `P1`: active reliability / wasted-work risk
+- `P2`: useful tightening after the main risks are handled
+- `P3`: monitor-only or acceptable residual noise
+
 ## Output Format
+
+Return the review in three sections, in this order.
+
+### 1. Findings Table
 
 Return a single Markdown table with exactly these columns and one row per reviewed category:
 
@@ -114,6 +157,7 @@ Return a single Markdown table with exactly these columns and one row per review
 - `Trace Evidence`
 - `Code Evidence`
 - `Existing Coverage`
+- `Risk Type`
 - `Feature Ideas`
 - `Error Improvements`
 - `Test Ideas`
@@ -125,14 +169,43 @@ Keep `Trace Evidence` tied to the provided pointers.
 Keep `Code Evidence` tied to current file paths and functions.
 Keep cells concise and specific; prefer semicolon-separated phrases over paragraphs.
 
+`Risk Type` must be one of:
+
+- `trustworthiness`
+- `reliability`
+- `residual_noise`
+
+### 2. Ranking Table
+
+After the findings table, return a second Markdown table with exactly these columns:
+
+- `Issue`
+- `Recent Evidence`
+- `Trust Risk`
+- `Likely Root Cause`
+- `Fix Priority`
+
+This table should answer the maintainer's real question: what is worth working on first?
+
+### 3. Implementation Sequence
+
+After the ranking table, return a short numbered implementation sequence that:
+
+- starts with the highest-leverage fixes
+- separates trustworthiness work from reliability work
+- points to likely files or subsystems
+- avoids overcommitting to low-signal cleanup
+
 ## What Good Output Looks Like
 
 Good:
 
 - identifies the current code paths that would need to change
 - distinguishes obsolete failures from current risks
+- distinguishes active trust risks from visible-but-less-dangerous runtime failures
 - proposes small durable tests instead of replaying giant traces blindly
 - explains why a recommendation should become a feature, policy change, or regression test
+- helps the maintainer see what makes sense to work on, not just what happened
 
 Bad:
 
@@ -140,6 +213,8 @@ Bad:
 - proposing tests without checking current coverage
 - proposing fixes without identifying the owning subsystem
 - treating every old trace as equally relevant forever
+- assuming every recurring category deserves equal roadmap weight
+- using technical failure labels as if they already explain product value
 
 ## Suggested Invocation Pattern
 
@@ -168,7 +243,9 @@ The goal is a self-improving loop:
 
 - telemetry identifies recurring problems
 - structured review connects traces to current code
-- the user reviews concrete proposals
+- the user reviews concrete proposals and asks clarifying questions that sharpen what is actually worth fixing
 - approved proposals become durable protections
 
 This keeps historical failures useful without forcing obsolete implementation details to remain permanent.
+
+The best postmortem review does not sound like a taxonomy report. It should sound like an engineer helping another engineer decide what deserves attention, what merely looks noisy, and what new control or feature would actually make future runs better.
