@@ -7,6 +7,14 @@ defmodule Rlm.Engine.Response.Salvage do
     |> String.replace(~r/\n?```\s*$/, "")
   end
 
+  def normalize_interleaved_fences(text) do
+    Regex.replace(
+      ~r/^`{6,}([a-zA-Z0-9_-]+)\s*$/m,
+      text,
+      "```\n```\\1"
+    )
+  end
+
   def first_likely_fenced_block(text) do
     case Regex.scan(~r/```([a-zA-Z0-9_-]*)\s*\n([\s\S]*?)```/, text, capture: :all_but_first) do
       [] ->

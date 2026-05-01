@@ -5,7 +5,8 @@ defmodule Rlm.Engine.Response.Extractor do
   alias Rlm.Engine.Response.Salvage
 
   def extract_code_blocks(text) do
-    fenced_blocks = FencedBlocks.extract(text)
+    normalized = Salvage.normalize_interleaved_fences(text)
+    fenced_blocks = FencedBlocks.extract(normalized)
 
     cond do
       fenced_blocks != [] ->
@@ -13,7 +14,7 @@ defmodule Rlm.Engine.Response.Extractor do
 
       true ->
         trimmed =
-          text
+          normalized
           |> Salvage.first_likely_fenced_block()
           |> Salvage.strip_fence_lines()
           |> Salvage.salvage_python_tail()

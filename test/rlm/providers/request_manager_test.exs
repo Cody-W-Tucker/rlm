@@ -1,6 +1,7 @@
 defmodule Rlm.Providers.RequestManagerTest do
   use ExUnit.Case, async: false
 
+  alias Rlm.Providers.OpenAI
   alias Rlm.Providers.RequestManager
   alias Rlm.Providers.RequestManager.Error
   alias Rlm.TestHelpers
@@ -130,6 +131,47 @@ defmodule Rlm.Providers.RequestManagerTest do
 
     assert error.class == :total_timeout
     assert error.partial_text =~ "Part 1"
+  end
+
+  test "accumulates streamed responses-api output", %{settings: settings} do
+    responses_url = "https://opencode.ai/zen/v1/responses"
+
+    assert {:ok, response} =
+             RequestManager.request_openai_chat(
+               responses_url,
+               request_headers(settings),
+               %{model: "test-model", input: [%{role: "user", content: "hello"}]},
+               settings,
+               fn _url, options ->
+                 into = Keyword.fetch!(options, :into)
+
+                 {:cont, _acc} =
+                   into.({:data, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hel\"}\n\n"}, {nil, nil})
+
+                 {:cont, _acc} =
+                   into.({:data, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"lo world\"}\n\n"}, {nil, nil})
+
+                 {:cont, _acc} = into.({:data, "data: [DONE]\n\n"}, {nil, nil})
+                 {:ok, %Req.Response{status: 200}}
+               end
+             )
+
+    assert response.text == "Hello world"
+  end
+
+  test "build_request uses responses endpoint directly when configured", %{settings: settings} do
+    {url, body} =
+      OpenAI.build_request(
+        [%{role: "system", content: "sys"}, %{role: "user", content: "hello"}],
+        %{settings | openai_base_url: "https://opencode.ai/zen/v1/responses"},
+        "gpt-5.4-mini"
+      )
+
+    assert url == "https://opencode.ai/zen/v1/responses"
+    assert body[:model] == "gpt-5.4-mini"
+    assert body[:instructions] == "sys"
+    assert body[:input] == [%{role: "user", content: "hello"}]
+    refute Map.has_key?(body, :messages)
   end
 
   defp request_url(settings) do

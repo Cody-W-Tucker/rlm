@@ -272,6 +272,23 @@ defmodule Rlm.TestProseThenPythonProvider do
   end
 end
 
+defmodule Rlm.TestInterleavedFenceProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(_history, _system_prompt, _settings) do
+    {:ok,
+     %{
+       text: "```python\nvalue = \"alpha\"\nprint(value)\n``````python\nvalue = value + \" beta\"\nprint(value)\nFINAL(value)\n```",
+       input_tokens: 0,
+       output_tokens: 0
+     }}
+  end
+
+  def complete_subquery(_sub_context, _instruction, _settings) do
+    {:ok, %{text: "unused", input_tokens: 0, output_tokens: 0}}
+  end
+end
+
 defmodule Rlm.TestFixtureProvider do
   @behaviour Rlm.Providers.Provider
 

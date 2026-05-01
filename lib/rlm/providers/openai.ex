@@ -32,19 +32,65 @@ defmodule Rlm.Providers.OpenAI do
   end
 
   defp request_chat(messages, %Settings{} = settings, model) do
-    body = %{
-      model: model,
-      temperature: 0.2,
-      messages: messages
-    }
-
     headers = [
       {"authorization", "Bearer #{settings.api_key}"},
       {"content-type", "application/json"}
     ]
 
-    url = String.trim_trailing(settings.openai_base_url, "/") <> "/chat/completions"
+    {url, body} = build_request(messages, settings, model)
 
     RequestManager.request_openai_chat(url, headers, body, settings)
+  end
+
+  def build_request(messages, %Settings{} = settings, model) do
+    base_url = String.trim_trailing(settings.openai_base_url, "/")
+
+    if responses_endpoint?(base_url) do
+      {responses_url(base_url), responses_body(messages, model)}
+    else
+      {chat_completions_url(base_url), chat_body(messages, model)}
+    end
+  end
+
+  defp chat_body(messages, model) do
+    %{
+      model: model,
+      temperature: 0.2,
+      messages: messages
+    }
+  end
+
+  defp responses_body(messages, model) do
+    {instructions, input} = split_instructions(messages)
+
+    %{
+      model: model,
+      temperature: 0.2,
+      input: input
+    }
+    |> maybe_put_instructions(instructions)
+  end
+
+  defp split_instructions([%{role: "system", content: content} | rest]) when is_binary(content) do
+    {content, rest}
+  end
+
+  defp split_instructions(messages), do: {nil, messages}
+
+  defp maybe_put_instructions(body, nil), do: body
+  defp maybe_put_instructions(body, instructions), do: Map.put(body, :instructions, instructions)
+
+  defp responses_endpoint?(base_url) do
+    String.ends_with?(base_url, "/responses") or String.contains?(base_url, "/responses?")
+  end
+
+  defp responses_url(base_url), do: base_url
+
+  defp chat_completions_url(base_url) do
+    if String.ends_with?(base_url, "/chat/completions") do
+      base_url
+    else
+      base_url <> "/chat/completions"
+    end
   end
 end

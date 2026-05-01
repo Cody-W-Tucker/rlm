@@ -101,4 +101,16 @@ defmodule Rlm.Engine.CoreRuntimeTest do
     assert result.answer == "salvaged from prose"
     assert result.failure_history == []
   end
+
+  test "salvages repeated interleaved python fences before execution" do
+    settings = TestHelpers.settings(%{max_iterations: 1})
+    bundle = %{entries: [], text: "abcdef", bytes: 6}
+
+    assert {:ok, result} =
+             Engine.run("summarize", bundle, settings, Rlm.TestInterleavedFenceProvider)
+
+    assert result.completed?
+    assert result.answer == "alpha beta"
+    assert length(result.iteration_records) == 1
+  end
 end

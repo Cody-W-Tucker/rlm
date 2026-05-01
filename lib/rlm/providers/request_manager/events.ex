@@ -82,6 +82,23 @@ defmodule Rlm.Providers.RequestManager.Events do
     end)
   end
 
+  def extract_stream_text(%{"type" => "response.output_text.delta", "delta" => delta})
+      when is_binary(delta),
+      do: delta
+
+  def extract_stream_text(%{"type" => "response.output_text.delta", "delta" => %{"text" => text}})
+      when is_binary(text),
+      do: text
+
+  def extract_stream_text(%{"type" => "response.completed", "response" => %{"output" => output}})
+      when is_list(output) do
+    extract_response_output(output)
+  end
+
+  def extract_stream_text(%{"output" => output}) when is_list(output) do
+    extract_response_output(output)
+  end
+
   def extract_stream_text(_payload), do: ""
 
   def extract_content_parts(parts) do
@@ -89,6 +106,19 @@ defmodule Rlm.Providers.RequestManager.Events do
       %{"text" => text} -> text
       %{"type" => "text", "text" => text} -> text
       _ -> ""
+    end)
+  end
+
+  def extract_response_output(items) do
+    Enum.map_join(items, "", fn
+      %{"content" => content} when is_list(content) ->
+        extract_content_parts(content)
+
+      %{"type" => "message", "content" => content} when is_list(content) ->
+        extract_content_parts(content)
+
+      _ ->
+        ""
     end)
   end
 end
