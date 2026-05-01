@@ -51,14 +51,20 @@ defmodule Rlm.Engine.Grounding.PolicyTest do
     assert message =~ "generic file-start reads"
   end
 
-  test "rejects unsupported abstract labels without followed evidence" do
+  test "rejects answer that echoes search scaffolding without read support" do
     bundle = %{lazy_entries: [%{label: "/tmp/a.md"}, %{label: "/tmp/b.md"}, %{label: "/tmp/c.md"}]}
 
     records = [
       %{
         details: %{
           "evidence" => %{
-            "search_count" => 1,
+            "search_count" => 3,
+            "search_patterns" => [
+              "\\bplan\\b|\\bplanning\\b",
+              "\\bscope\\b|\\bscoping\\b",
+              "\\bstrategy\\b|\\bapproach\\b",
+              "\\bdecompose\\b|\\bbreakdown\\b"
+            ],
             "hit_paths" => ["/tmp/a.md"],
             "read_files" => ["/tmp/a.md", "/tmp/b.md", "/tmp/c.md"],
             "read_windows" => ["/tmp/a.md:20:5"],
@@ -79,24 +85,27 @@ defmodule Rlm.Engine.Grounding.PolicyTest do
     assert {:error, message} =
              Policy.validate_final_answer(
                bundle,
-               "The user follows an iterative MVP strategy.",
+               "The user uses planning and scoping with a strategy of decomposing tasks into a breakdown.",
                hd(records).details,
                records
              )
 
-    assert message =~ "unsupported abstract labels"
-    assert message =~ "iterative"
-    assert message =~ "mvp"
+    assert message =~ "search scaffolding"
   end
 
-  test "allows abstract labels when followed passages support them directly" do
+  test "allows answer when search phrases are backed by read followups" do
     bundle = %{lazy_entries: [%{label: "/tmp/a.md"}, %{label: "/tmp/b.md"}, %{label: "/tmp/c.md"}]}
 
     records = [
       %{
         details: %{
           "evidence" => %{
-            "search_count" => 1,
+            "search_count" => 3,
+            "search_patterns" => [
+              "\\bplan\\b|\\bplanning\\b",
+              "\\bscope\\b|\\bscoping\\b",
+              "\\bstrategy\\b"
+            ],
             "hit_paths" => ["/tmp/a.md"],
             "read_files" => ["/tmp/a.md", "/tmp/b.md", "/tmp/c.md"],
             "read_windows" => ["/tmp/a.md:20:5"],
@@ -104,9 +113,16 @@ defmodule Rlm.Engine.Grounding.PolicyTest do
               %{
                 "path" => "/tmp/a.md",
                 "line" => 20,
-                "pattern" => "MVP|minimum viable",
-                "query_kind" => "theory_loaded",
-                "text" => "we should build an MVP first and keep the slice narrow"
+                "pattern" => "plan|scope",
+                "query_kind" => "behavioral",
+                "text" => "make a plan to scope the work before starting"
+              },
+              %{
+                "path" => "/tmp/b.md",
+                "line" => 10,
+                "pattern" => "strategy",
+                "query_kind" => "behavioral",
+                "text" => "the strategy is to build incrementally"
               }
             ]
           }
@@ -117,7 +133,44 @@ defmodule Rlm.Engine.Grounding.PolicyTest do
     assert :ok =
              Policy.validate_final_answer(
                bundle,
-               "The user explicitly asks for an MVP first.",
+               "The user makes a plan to scope work, following a strategy of building incrementally.",
+               hd(records).details,
+               records
+             )
+  end
+
+  test "allows answer with common words even when they appeared in search patterns" do
+    bundle = %{lazy_entries: [%{label: "/tmp/a.md"}, %{label: "/tmp/b.md"}, %{label: "/tmp/c.md"}]}
+
+    records = [
+      %{
+        details: %{
+          "evidence" => %{
+            "search_count" => 2,
+            "search_patterns" => [
+              "\\bfirst\\b|\\bthen\\b"
+            ],
+            "hit_paths" => ["/tmp/a.md"],
+            "read_files" => ["/tmp/a.md", "/tmp/b.md", "/tmp/c.md"],
+            "read_windows" => ["/tmp/a.md:20:5"],
+            "read_followups" => [
+              %{
+                "path" => "/tmp/a.md",
+                "line" => 20,
+                "pattern" => "first|then",
+                "query_kind" => "behavioral",
+                "text" => "first review, then execute"
+              }
+            ]
+          }
+        }
+      }
+    ]
+
+    assert :ok =
+             Policy.validate_final_answer(
+               bundle,
+               "The user iteratively refines their approach, first reviewing then executing.",
                hd(records).details,
                records
              )
