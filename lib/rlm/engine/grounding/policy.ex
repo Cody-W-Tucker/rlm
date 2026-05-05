@@ -35,16 +35,17 @@ defmodule Rlm.Engine.Grounding.Policy do
       %{grade: grade, metrics: %{search_count: search_count} = metrics}
       when search_count >= @early_search_round_threshold ->
         promoted_reads = read_units(context_bundle, metrics)
+        target = promoted_read_target(context_bundle)
 
         cond do
           search_count >= @late_search_round_threshold and
-              promoted_reads < @minimum_promoted_read_windows ->
+              promoted_reads < target ->
             {:error,
-             "Grounding grade #{grade} is still too weak after #{search_count} search rounds. Stop searching now and promote at least #{@minimum_promoted_read_windows} strongest hits into targeted `read_file()` or `read_jsonl()` windows before taking another broad retrieval step."}
+             "Grounding grade #{grade} is still too weak after #{search_count} search rounds. Stop searching now and promote at least #{target} strongest hits into targeted `read_file()` or `read_jsonl()` windows before taking another broad retrieval step."}
 
-          promoted_reads < @minimum_promoted_read_windows ->
+          promoted_reads < target ->
             {:error,
-             "Grounding grade #{grade} is drifting after #{search_count} search rounds with only #{promoted_reads} promoted read(s). Stop expanding the search space and promote at least #{@minimum_promoted_read_windows} strongest hits into targeted `read_file()` or `read_jsonl()` windows before continuing."}
+             "Grounding grade #{grade} is drifting after #{search_count} search rounds with only #{promoted_reads} promoted read(s). Stop expanding the search space and promote at least #{target} strongest hits into targeted `read_file()` or `read_jsonl()` windows before continuing."}
 
           true ->
             :ok
@@ -82,6 +83,14 @@ defmodule Rlm.Engine.Grounding.Policy do
       max(Map.get(metrics, :read_files, 0), Map.get(metrics, :read_windows, 0))
     else
       Map.get(metrics, :read_files, 0)
+    end
+  end
+
+  def promoted_read_target(context_bundle) do
+    if line_delimited_corpus?(context_bundle) do
+      @minimum_promoted_read_windows
+    else
+      required_file_reads(context_bundle)
     end
   end
 
@@ -148,6 +157,9 @@ defmodule Rlm.Engine.Grounding.Policy do
     read_files = Map.get(metrics, :read_files, 0)
 
     cond do
+      not line_delimited_corpus?(context_bundle) and read_files >= required_file_reads(context_bundle) ->
+        true
+
       read_files >= @minimum_multi_file_reads ->
         true
 
@@ -168,7 +180,9 @@ defmodule Rlm.Engine.Grounding.Policy do
     if multi_line_delimited_corpus?(context_bundle) do
       "Grounding grade #{grade} is too weak for a multi-file line-delimited final answer. Search, preview, then promote either at least #{@minimum_multi_file_reads} relevant files or at least #{@minimum_multi_file_reads} targeted `read_file()`/`read_jsonl()` windows with at least one hit-followup read before finalizing from that smaller inspected set."
     else
-      "Grounding grade #{grade} is too weak for a multi-file file-backed final answer. Search, preview, then promote at least #{@minimum_multi_file_reads} relevant files to targeted `read_file()` inspection before finalizing from that smaller inspected set."
+      target = required_file_reads(context_bundle)
+
+      "Grounding grade #{grade} is too weak for a multi-file file-backed final answer. Search, preview, then promote at least #{target} relevant files to targeted `read_file()` inspection before finalizing from that smaller inspected set."
     end
   end
 
@@ -177,11 +191,12 @@ defmodule Rlm.Engine.Grounding.Policy do
       %{grade: grade, metrics: %{search_count: search_count} = metrics}
       when search_count >= @minimum_promoted_read_windows ->
         read_units = read_units(context_bundle, metrics)
+        target = promoted_read_target(context_bundle)
 
         cond do
-          read_units < @minimum_promoted_read_windows ->
+          read_units < target ->
             {:error,
-             "Grounding grade #{grade} is too weak after #{search_count} search rounds. Stop expanding search and promote at least #{@minimum_promoted_read_windows} strongest hits into targeted `read_file()` or `read_jsonl()` windows before finalizing."}
+             "Grounding grade #{grade} is too weak after #{search_count} search rounds. Stop expanding search and promote at least #{target} strongest hits into targeted `read_file()` or `read_jsonl()` windows before finalizing."}
 
           metrics.hit_paths >= 1 and Map.get(metrics, :read_followups, 0) < 1 ->
             {:error,
@@ -246,6 +261,14 @@ defmodule Rlm.Engine.Grounding.Policy do
 
   defp line_delimited_corpus?(context_bundle) do
     single_line_delimited_source?(context_bundle) or multi_line_delimited_corpus?(context_bundle)
+  end
+
+  defp required_file_reads(context_bundle) do
+    context_bundle
+    |> Map.get(:lazy_entries, [])
+    |> length()
+    |> min(@minimum_multi_file_reads)
+    |> max(1)
   end
 
   defp line_delimited_entry?(entry) do

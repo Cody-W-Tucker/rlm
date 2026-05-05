@@ -49,7 +49,7 @@ defmodule Rlm.Engine.Prompt.IterationFeedback do
         nil
       end
 
-    consolidation_note = consolidation_note(exec_result)
+    consolidation_note = consolidation_note(exec_result, context_bundle)
     grounding_note = grounding_note(exec_result, context_bundle)
     no_output_note = no_output_note(exec_result)
     endgame_note = endgame_note(exec_result, run_state, remaining_iterations)
@@ -78,13 +78,14 @@ defmodule Rlm.Engine.Prompt.IterationFeedback do
     end
   end
 
-  defp consolidation_note(exec_result) do
+  defp consolidation_note(exec_result, context_bundle) do
     evidence = GroundingPolicy.evidence(exec_result.details || %{})
     read_units = max(length(evidence.read_files), length(evidence.read_windows))
+    target = GroundingPolicy.promoted_read_target(context_bundle)
 
     cond do
-      evidence.search_count >= 3 and read_units < 3 ->
-        "You are still scouting after #{evidence.search_count} search rounds with only #{read_units} promoted read(s). Stop searching. Pick the three strongest hit-backed passages, inspect them directly with `read_file()` or `read_jsonl()`, update `working_claim`, then decide whether one more read or `FINAL(...)` is justified."
+      evidence.search_count >= 3 and read_units < target ->
+        "You are still scouting after #{evidence.search_count} search rounds with only #{read_units} promoted read(s). Stop searching. Pick the #{target} strongest hit-backed passage(s), inspect them directly with `read_file()` or `read_jsonl()`, update `working_claim`, then decide whether one more read or `FINAL(...)` is justified."
 
       evidence.search_count >= 3 and evidence.read_followups == [] ->
         "You have already done multiple search rounds. Stop expanding search; promote the strongest hit lines into targeted `read_file()` or `read_jsonl()` windows, draft a tentative claim from those passages, derive expected-nearby and weakening patterns from that claim, call `assess_evidence()` if you need a convergence check, then run one challenge pass before finalizing."
@@ -100,17 +101,22 @@ defmodule Rlm.Engine.Prompt.IterationFeedback do
   defp grounding_note(exec_result, context_bundle) do
     case Grade.assess(context_bundle, [%{details: exec_result.details || %{}}]) do
       %{grade: grade, level: :scout_only} ->
-        "Current grounding grade: #{grade} (scout-only). The previews and grep hits are useful for high-value introspection, but promote the strongest neutral or counterexample candidates to targeted `read_file()` windows and read at least 3 relevant files before finalizing an evidence-heavy answer."
+        target = GroundingPolicy.promoted_read_target(context_bundle)
+
+        "Current grounding grade: #{grade} (scout-only). The previews and grep hits are useful for high-value introspection, but promote the strongest neutral or counterexample candidates to targeted `read_file()` windows and read at least #{target} relevant file(s)/window(s) before finalizing an evidence-heavy answer."
 
       %{grade: grade, level: :search_only} ->
-        "Current grounding grade: #{grade} (search-only). You have searched for patterns but haven't directly inspected what the files actually contain. Stop searching. Pick the most promising neutral or counterexample hits, preview them with `peek_hit()` or `peek_file()`, then promote at least 3 to targeted `read_file()` windows before finalizing."
+        target = GroundingPolicy.promoted_read_target(context_bundle)
+
+        "Current grounding grade: #{grade} (search-only). You have searched for patterns but haven't directly inspected what the files actually contain. Stop searching. Pick the most promising neutral or counterexample hits, preview them with `peek_hit()` or `peek_file()`, then promote at least #{target} to targeted `read_file()` windows before finalizing."
 
       %{
         grade: grade,
         level: :read_backed,
         metrics: %{read_files: read_files, read_windows: windows}
       } ->
-        deficit = max(0, 3 - max(read_files, windows))
+        target = GroundingPolicy.promoted_read_target(context_bundle)
+        deficit = max(0, target - max(read_files, windows))
 
         "Current grounding grade: #{grade} (limited read-backed). You have read #{read_files} file(s) and #{windows} targeted window(s). You still need #{deficit} more promoted read(s)/window(s) before a multi-file answer is well-grounded. Keep the working set small, but make sure the next reads follow strong hits or nearby examples, update your hypothesis, and check one competing interpretation before finalizing."
 

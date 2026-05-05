@@ -42,7 +42,7 @@ defmodule Rlm.Context.Loader do
         label: label,
         text: valid_text,
         bytes: byte_size(valid_text),
-        metadata: %{source: label}
+        metadata: %{source: label, source_kind: :text}
       }
 
       {:ok,
@@ -65,14 +65,14 @@ defmodule Rlm.Context.Loader do
     expanded = expand_from_caller(path)
 
     cond do
-      File.regular?(expanded) -> load_file(expanded, settings)
+      File.regular?(expanded) -> load_file(expanded, settings, %{source_kind: :file})
       File.dir?(expanded) -> load_directory(expanded, settings)
       wildcard?(path) -> load_glob(expanded, path, settings)
       true -> {:error, "Context source not found: #{path}"}
     end
   end
 
-  defp load_file(path, %Settings{} = settings) do
+  defp load_file(path, %Settings{} = settings, metadata) do
     with {:ok, stat} <- File.stat(path),
          {:ok, size} <- ensure_file_limit(stat.size, settings.max_lazy_file_bytes, path) do
       entry = %Entry{
@@ -81,7 +81,7 @@ defmodule Rlm.Context.Loader do
         label: path,
         text: "",
         bytes: 0,
-        metadata: %{path: path, lazy: true}
+        metadata: Map.merge(%{path: path, lazy: true}, metadata)
       }
 
       {:ok, %{entries: [entry], text: "", bytes: 0, lazy_bytes: size, lazy_entries: [entry]}}
@@ -100,9 +100,15 @@ defmodule Rlm.Context.Loader do
     if length(files) > settings.max_context_files do
       {:error, "Directory #{path} exceeds the #{settings.max_context_files} file safety limit."}
     else
-      files
-      |> Enum.map(&{:path, &1})
-      |> load_many(settings)
+      Enum.reduce_while(files, {:ok, empty_bundle()}, fn file, {:ok, bundle} ->
+        with {:ok, loaded} <-
+               load_file(file, settings, %{source_kind: :directory, source_root: path}),
+             {:ok, merged} <- append(bundle, loaded, settings) do
+          {:cont, {:ok, merged}}
+        else
+          {:error, _} = error -> {:halt, error}
+        end
+      end)
     end
   end
 
@@ -123,7 +129,15 @@ defmodule Rlm.Context.Loader do
          "Glob #{original_pattern} exceeds the #{settings.max_context_files} file safety limit."}
 
       true ->
-        load_many(Enum.map(matches, &{:path, &1}), settings)
+        Enum.reduce_while(matches, {:ok, empty_bundle()}, fn file, {:ok, bundle} ->
+          with {:ok, loaded} <-
+                 load_file(file, settings, %{source_kind: :glob, source_root: original_pattern}),
+               {:ok, merged} <- append(bundle, loaded, settings) do
+            {:cont, {:ok, merged}}
+          else
+            {:error, _} = error -> {:halt, error}
+          end
+        end)
     end
   end
 
@@ -147,7 +161,7 @@ defmodule Rlm.Context.Loader do
             label: url,
             text: text,
             bytes: byte_size(text),
-            metadata: %{url: url, status: status}
+            metadata: %{url: url, status: status, source_kind: :url}
           }
 
           {:ok,

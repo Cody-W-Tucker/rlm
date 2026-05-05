@@ -79,6 +79,65 @@ defmodule Rlm.Engine.Grounding.PolicyTest do
     assert message =~ "generic file-start reads"
   end
 
+  test "allows non-line-delimited final answer after reading all available files when fewer than three exist" do
+    bundle = %{
+      lazy_entries: [%{label: "/tmp/alignment_spec.md"}, %{label: "/tmp/article.md"}]
+    }
+
+    records = [
+      %{
+        details: %{
+          "evidence" => %{
+            "search_count" => 3,
+            "hit_paths" => ["/tmp/alignment_spec.md", "/tmp/article.md"],
+            "previewed_files" => ["/tmp/alignment_spec.md", "/tmp/article.md"],
+            "read_files" => ["/tmp/alignment_spec.md", "/tmp/article.md"],
+            "read_windows" => ["/tmp/alignment_spec.md:1:100", "/tmp/article.md:1:100"],
+            "read_followups" => [
+              %{
+                "path" => "/tmp/alignment_spec.md",
+                "line" => 12,
+                "pattern" => "VERDICT",
+                "query_kind" => "behavioral",
+                "text" => "VERDICT: SHIP | TIGHTEN | REWORK"
+              }
+            ]
+          }
+        }
+      }
+    ]
+
+    assert :ok =
+             Policy.validate_final_answer(
+               bundle,
+               "VERDICT: REWORK",
+               hd(records).details,
+               records
+             )
+  end
+
+  test "search progress caps promoted file reads at available non-line-delimited file count" do
+    bundle = %{
+      lazy_entries: [%{label: "/tmp/alignment_spec.md"}, %{label: "/tmp/article.md"}]
+    }
+
+    records = [
+      %{
+        details: %{
+          "evidence" => %{
+            "search_count" => 3,
+            "hit_paths" => ["/tmp/alignment_spec.md"],
+            "read_files" => ["/tmp/alignment_spec.md", "/tmp/article.md"],
+            "read_windows" => ["/tmp/alignment_spec.md:1:100", "/tmp/article.md:1:100"],
+            "read_followups" => []
+          }
+        }
+      }
+    ]
+
+    assert :ok = Policy.validate_search_progress(bundle, records)
+  end
+
   test "allows multi-file line-delimited runs with window-backed followup evidence" do
     bundle = %{
       lazy_entries: [

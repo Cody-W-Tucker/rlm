@@ -9,12 +9,12 @@ defmodule Rlm.Engine.PolicyTest do
 
     bundle = %{
       entries: [
-        %{label: "/tmp/Week-09-2025.md", type: :file},
-        %{label: "/tmp/Week-10-2025.md", type: :file}
+        %{label: "/tmp/Week-09-2025.md", type: :file, metadata: %{source_kind: :file}},
+        %{label: "/tmp/Week-10-2025.md", type: :file, metadata: %{source_kind: :file}}
       ],
       lazy_entries: [
-        %{label: "/tmp/Week-09-2025.md", type: :file},
-        %{label: "/tmp/Week-10-2025.md", type: :file}
+        %{label: "/tmp/Week-09-2025.md", type: :file, metadata: %{source_kind: :file}},
+        %{label: "/tmp/Week-10-2025.md", type: :file, metadata: %{source_kind: :file}}
       ],
       text: "",
       bytes: 4096
@@ -27,6 +27,7 @@ defmodule Rlm.Engine.PolicyTest do
 
     assert metadata =~ "File-backed sources: 2"
     assert metadata =~ "Lazy file-backed size: 0 bytes across 2 file(s)"
+    assert metadata =~ "Input shape: multiple explicit files"
     assert metadata =~ "Grounding hint: Base the final answer on direct inspection of the files"
     assert metadata =~ "targeted `read_file()` windows count as inspected evidence"
     assert metadata =~ "Prefer verified claims from inspected files over path-heavy attribution"
@@ -41,10 +42,10 @@ defmodule Rlm.Engine.PolicyTest do
 
     bundle = %{
       entries: [
-        %{label: "/tmp/chat-history.jsonl", type: :file}
+        %{label: "/tmp/chat-history.jsonl", type: :file, metadata: %{source_kind: :file}}
       ],
       lazy_entries: [
-        %{label: "/tmp/chat-history.jsonl", type: :file}
+        %{label: "/tmp/chat-history.jsonl", type: :file, metadata: %{source_kind: :file}}
       ],
       text: "",
       bytes: 0,
@@ -57,6 +58,28 @@ defmodule Rlm.Engine.PolicyTest do
     assert metadata =~ "Discover what is actually there"
     assert metadata =~ "hunting for keywords"
     assert metadata =~ "weakening or boundary-check pass"
+  end
+
+  test "context metadata surfaces expanded directory input shape" do
+    settings = TestHelpers.settings()
+
+    bundle = %{
+      entries: [
+        %{label: "/tmp/project/a.md", type: :file, metadata: %{source_kind: :directory}},
+        %{label: "/tmp/project/b.md", type: :file, metadata: %{source_kind: :directory}}
+      ],
+      lazy_entries: [
+        %{label: "/tmp/project/a.md", type: :file, metadata: %{source_kind: :directory}},
+        %{label: "/tmp/project/b.md", type: :file, metadata: %{source_kind: :directory}}
+      ],
+      text: "",
+      bytes: 0,
+      lazy_bytes: 4096
+    }
+
+    metadata = Policy.context_metadata(bundle, settings, "summarize")
+
+    assert metadata =~ "Input shape: expanded directory input"
   end
 
   test "system prompt requires scouting before chunking" do
@@ -93,7 +116,7 @@ defmodule Rlm.Engine.PolicyTest do
     assert prompt =~ "`sample_jsonl(path, limit=20)`"
     assert prompt =~ "`grep_jsonl_fields(path, field_pattern, text_pattern=\".*\", limit=20)`"
     assert prompt =~ "first search neutral behavioral markers and nearby phrasing"
-    assert prompt =~ "`grep_open(pattern, limit=10, window=12)`"
+    assert prompt =~ "`grep_open(pattern, limit=10, window=12, path=None)`"
     assert prompt =~ "`assess_evidence(question, hits=None, reads=None, hypothesis=None)`"
     assert prompt =~ "prefer `peek_hit(hit)` or `open_hit(hit)`"
     assert prompt =~ "For large line-delimited files such as `jsonl`, logs, CSV, or TSV"

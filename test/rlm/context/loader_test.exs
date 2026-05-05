@@ -21,6 +21,8 @@ defmodule Rlm.Context.LoaderTest do
     assert Enum.map(bundle.entries, &Path.basename(&1.label)) == ["alpha.txt", "beta.txt"]
     assert bundle.text == ""
     assert Enum.map(bundle.lazy_entries, &Path.basename(&1.label)) == ["alpha.txt", "beta.txt"]
+    assert Enum.all?(bundle.lazy_entries, &(&1.metadata.source_kind == :directory))
+    assert Enum.all?(bundle.lazy_entries, &(&1.metadata.source_root == tmp))
   end
 
   test "loads glob patterns", %{tmp: tmp, settings: settings} do
@@ -31,6 +33,8 @@ defmodule Rlm.Context.LoaderTest do
     assert {:ok, bundle} = Loader.load({:path, Path.join(tmp, "*.ex")}, settings)
     assert length(bundle.entries) == 2
     assert length(bundle.lazy_entries) == 2
+    assert Enum.all?(bundle.lazy_entries, &(&1.metadata.source_kind == :glob))
+    assert Enum.all?(bundle.lazy_entries, &(&1.metadata.source_root == Path.join(tmp, "*.ex")))
   end
 
   test "loads relative paths from caller cwd when provided", %{tmp: tmp, settings: settings} do
@@ -49,6 +53,7 @@ defmodule Rlm.Context.LoaderTest do
 
     assert {:ok, bundle} = Loader.load({:path, "relative.txt"}, settings)
     assert Enum.map(bundle.entries, &Path.basename(&1.label)) == ["relative.txt"]
+    assert hd(bundle.lazy_entries).metadata.source_kind == :file
   end
 
   test "loads url context", %{settings: settings} do
@@ -63,6 +68,7 @@ defmodule Rlm.Context.LoaderTest do
 
     assert bundle.text == "remote context"
     assert hd(bundle.entries).type == :url
+    assert hd(bundle.entries).metadata.source_kind == :url
   end
 
   test "enforces aggregate preloaded text safety limits", %{tmp: tmp} do

@@ -11,6 +11,7 @@ defmodule Rlm.Engine.Prompt.ContextStrategy do
     lazy_bytes = Map.get(context_bundle, :lazy_bytes, 0)
     inline_chars = String.length(context)
     structure_hint = structure_hint(context_bundle, context)
+    input_shape_hint = input_shape_hint(context_bundle)
 
     source_types =
       context_bundle.entries
@@ -54,6 +55,7 @@ defmodule Rlm.Engine.Prompt.ContextStrategy do
       "  - Preloaded context chars: #{inline_chars}",
       "  - File-backed sources: #{lazy_file_count}",
       "  - Source types: #{source_types_display}",
+      "  - Input shape: #{input_shape_hint}",
       "  - Structure hint: #{structure_hint}",
       "  - Access hint: #{access_hint}",
       "  - Strategy hint: #{strategy_hint}",
@@ -84,6 +86,46 @@ defmodule Rlm.Engine.Prompt.ContextStrategy do
 
       true ->
         "No strong structure detected yet; scout a sample before chunking."
+    end
+  end
+
+  defp input_shape_hint(context_bundle) do
+    lazy_entries = Map.get(context_bundle, :lazy_entries, [])
+    lazy_file_count = length(lazy_entries)
+
+    source_kinds =
+      lazy_entries
+      |> Enum.map(fn entry ->
+        entry
+        |> Map.get(:metadata, %{})
+        |> Map.get(:source_kind)
+      end)
+      |> Enum.uniq()
+
+    cond do
+      lazy_file_count == 0 and context_bundle.bytes > 0 ->
+        "inline text or URL content"
+
+      lazy_file_count == 1 and source_kinds == [:file] ->
+        "single explicit file"
+
+      lazy_file_count > 1 and source_kinds == [:file] ->
+        "multiple explicit files"
+
+      lazy_file_count >= 1 and source_kinds == [:directory] ->
+        "expanded directory input"
+
+      lazy_file_count >= 1 and source_kinds == [:glob] ->
+        "expanded glob input"
+
+      source_kinds == [:text] ->
+        "inline text"
+
+      source_kinds == [:url] ->
+        "URL content"
+
+      true ->
+        "mixed context sources"
     end
   end
 
