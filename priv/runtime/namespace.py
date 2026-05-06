@@ -17,6 +17,14 @@ def FINAL_VAR(value):
     state.set_final_result(None if value is None else str(value))
 
 
+def SET_COMPASS(value):
+    state.set_compass_map(value)
+
+
+def GET_COMPASS():
+    return state.get_compass_map()
+
+
 def refresh_user_ns():
     user_ns.update(
         {
@@ -38,6 +46,8 @@ def refresh_user_ns():
             "async_llm_query": protocol.async_llm_query,
             "FINAL": FINAL,
             "FINAL_VAR": FINAL_VAR,
+            "SET_COMPASS": SET_COMPASS,
+            "GET_COMPASS": GET_COMPASS,
             "SubqueryError": protocol.SubqueryError,
         }
     )

@@ -31,7 +31,10 @@ defmodule Rlm.Engine.PolicyTest do
     assert metadata =~ "Grounding hint: Base the final answer on direct inspection of the files"
     assert metadata =~ "targeted `read_file()` windows count as inspected evidence"
     assert metadata =~ "Prefer verified claims from inspected files over path-heavy attribution"
-    assert metadata =~ "Search for concrete behavioral markers, local examples, and contradictions"
+
+    assert metadata =~
+             "Search for concrete behavioral markers, local examples, and contradictions"
+
     assert metadata =~ "Metadata budget: constant-size summary only"
     refute metadata =~ "/tmp/Week-09-2025.md"
     refute metadata =~ "First 20 files"
@@ -54,7 +57,9 @@ defmodule Rlm.Engine.PolicyTest do
 
     metadata = Policy.context_metadata(bundle, settings, "summarize coding style")
 
-    assert metadata =~ "Likely line-delimited structured records such as JSONL or event/chat history."
+    assert metadata =~
+             "Likely line-delimited structured records such as JSONL or event/chat history."
+
     assert metadata =~ "Discover what is actually there"
     assert metadata =~ "hunting for keywords"
     assert metadata =~ "weakening or boundary-check pass"
@@ -120,8 +125,13 @@ defmodule Rlm.Engine.PolicyTest do
     assert prompt =~ "`assess_evidence(question, hits=None, reads=None, hypothesis=None)`"
     assert prompt =~ "prefer `peek_hit(hit)` or `open_hit(hit)`"
     assert prompt =~ "For large line-delimited files such as `jsonl`, logs, CSV, or TSV"
-    assert prompt =~ "For JSONL or chat-history corpora, first inspect the schema with `sample_jsonl()`"
-    assert prompt =~ "Hit objects from `grep_files()`, `grep_open()`, and `grep_jsonl_fields()` expose attributes"
+
+    assert prompt =~
+             "For JSONL or chat-history corpora, first inspect the schema with `sample_jsonl()`"
+
+    assert prompt =~
+             "Hit objects from `grep_files()`, `grep_open()`, and `grep_jsonl_fields()` expose attributes"
+
     assert prompt =~ "Prefer attribute access for hits"
     assert prompt =~ "Good: `hit.path`, `hit.line`, `hit.text`, `hit.field`, `hit.value`"
     assert prompt =~ "Also tolerated: `hit['line']`, `hit['field']`, `hit['value']`"
@@ -130,7 +140,10 @@ defmodule Rlm.Engine.PolicyTest do
     assert prompt =~ "do not force every claim into a `(from /path/to/file)` label"
     assert prompt =~ "If a concept is synthesized across multiple notes, say so"
     assert prompt =~ "Prefer `peek_file()` before `read_file()`"
-    assert prompt =~ "run a neutral retrieval pass, read surrounding passages, form a tentative claim"
+
+    assert prompt =~
+             "run a neutral retrieval pass, read surrounding passages, form a tentative claim"
+
     assert prompt =~ "usually 3-4 direct reads"
     assert prompt =~ "Use `assess_evidence()` after a few searches"
     assert prompt =~ "Keep an explicit verification loop in variables"
@@ -161,6 +174,30 @@ defmodule Rlm.Engine.PolicyTest do
     assert prompt =~ "end this iteration by calling `FINAL(...)`"
     assert prompt =~ "expected-nearby patterns"
     assert prompt =~ "weakening patterns"
+  end
+
+  test "system prompt adds compass knowledge protocol when enabled" do
+    settings = TestHelpers.settings(%{judgment_style: :compass})
+
+    run_state = %{
+      total_sub_queries: 0,
+      recovery_flags: %{
+        recovery_mode: false,
+        async_disabled: false,
+        broad_subqueries_disabled: false
+      }
+    }
+
+    prompt = Policy.system_prompt(settings, 1, run_state)
+
+    assert prompt =~ "Compass knowledge protocol is active"
+    assert prompt =~ "NORTH = genealogy, origins, context"
+    assert prompt =~ "WEST = family resemblance"
+    assert prompt =~ "EAST = contradictions, omissions, alternatives"
+    assert prompt =~ "SOUTH = implications, applications"
+    assert prompt =~ "SET_COMPASS(compass_map)"
+    assert prompt =~ "\"north\""
+    assert prompt =~ "\"kind\": \"context|origin|dependency|genealogy\""
   end
 
   test "iteration feedback escalates toward finalization near the budget limit" do
@@ -204,5 +241,87 @@ defmodule Rlm.Engine.PolicyTest do
     assert feedback =~ "One iteration remains"
     assert feedback =~ "Do not gather more evidence on the next turn"
     assert feedback =~ "call `FINAL(...)` next"
+  end
+
+  test "compass verification report marks missing and weak quadrants" do
+    settings = TestHelpers.settings(%{judgment_style: :compass})
+
+    bundle = %{
+      lazy_entries: [%{label: "/tmp/artifact.md", type: :file}],
+      entries: [%{label: "/tmp/artifact.md", type: :file}]
+    }
+
+    details = %{
+      "compass" => %{
+        "north" => [%{"kind" => "context", "text" => "This idea emerges from prior note review."}],
+        "west" => [%{"kind" => "adjacent", "text" => "It resembles a note audit pattern."}],
+        "east" => [],
+        "south" => [%{"kind" => "trajectory", "text" => "It could lead to a reusable checklist."}]
+      }
+    }
+
+    annotated = Rlm.Engine.Grounding.Policy.annotate_details(bundle, details, settings)
+    report = annotated["compass_verification"]
+
+    assert report["status"] == "incomplete"
+    assert report["missing_quadrants"] == ["east"]
+    assert Enum.any?(report["weak_quadrants"], &(&1["quadrant"] == "map"))
+  end
+
+  test "compass policy accepts complete evidence-backed knowledge maps" do
+    settings = TestHelpers.settings(%{judgment_style: :compass})
+
+    bundle = %{
+      lazy_entries: [%{label: "/tmp/artifact.md", type: :file}],
+      entries: [%{label: "/tmp/artifact.md", type: :file}]
+    }
+
+    details = %{
+      "evidence" => %{
+        "previewed_files" => ["/tmp/artifact.md"],
+        "read_files" => ["/tmp/artifact.md"],
+        "read_windows" => ["/tmp/artifact.md:1:120"]
+      },
+      "compass" => %{
+        "north" => [
+          %{
+            "kind" => "context",
+            "text" => "The idea comes from recurring build friction in the current workflow.",
+            "evidence" => ["artifact.md:4-7"]
+          }
+        ],
+        "west" => [
+          %{
+            "kind" => "adjacent",
+            "text" => "It resembles lightweight design review checklists used elsewhere.",
+            "evidence" => ["artifact.md:10-12"]
+          }
+        ],
+        "east" => [
+          %{
+            "kind" => "missing",
+            "text" => "The current note still omits ownership boundaries.",
+            "evidence" => ["artifact.md:14-15"]
+          }
+        ],
+        "south" => [
+          %{
+            "kind" => "next_step",
+            "text" => "Turn the note into a reusable checklist for the next release.",
+            "evidence" => ["artifact.md:18-19"]
+          }
+        ],
+        "confidence" => "medium"
+      }
+    }
+
+    assert :ok =
+             Rlm.Engine.Grounding.Policy.validate_final_answer(
+               bundle,
+               "Rendered answer from verified map",
+               details,
+               [],
+               settings
+             )
   end
 end

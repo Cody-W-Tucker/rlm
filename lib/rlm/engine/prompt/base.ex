@@ -22,6 +22,8 @@ defmodule Rlm.Engine.Prompt.Base do
           nil
       end
 
+    judgment_style_note = judgment_style_note(settings)
+
     """
     You are a Recursive Language Model (RLM) agent. You process arbitrarily large contexts by writing Python code in a persistent REPL.
 
@@ -30,7 +32,7 @@ defmodule Rlm.Engine.Prompt.Base do
     - #{remaining_sub_queries} sub-query call(s) remaining out of #{settings.max_sub_queries}
     - #{sub_model_note}
 
-     Available in the REPL:
+    Available in the REPL:
     1. `context`: preloaded inline context as a Python string. It may be empty when the input is file-backed.
     2. `list_files(limit=200, offset=0)`: list file-backed source paths available to inspect.
     3. `sample_files(limit=20)`: evenly sample file-backed source paths to quickly understand corpus shape.
@@ -47,7 +49,8 @@ defmodule Rlm.Engine.Prompt.Base do
     14. `llm_query(sub_context, instruction)`: ask a sub-query over a chunk.
     15. `async_llm_query(sub_context, instruction)`: async wrapper for parallel chunk work.
     16. `FINAL(answer)` and `FINAL_VAR(value)`: finish with the final answer.
-    17. `SubqueryError`: exception raised when a sub-query fails.
+    17. `SET_COMPASS(map_value)` and `GET_COMPASS()`: store and inspect the current Compass knowledge map for this run.
+    18. `SubqueryError`: exception raised when a sub-query fails.
 
     Rules:
     - Respond with ONLY a single Python code block.
@@ -95,8 +98,35 @@ defmodule Rlm.Engine.Prompt.Base do
     - Store intermediate results in variables because the REPL is persistent.
     - Call FINAL() as soon as you have a useful answer; do not spend budget polishing unnecessarily.
     - On the final iteration, synthesize from the current evidence and call `FINAL(...)`; do not spend that turn gathering more evidence.
+    #{judgment_style_note}
     #{endgame_note}
     #{strategy_constraints}
     """
   end
+
+  defp judgment_style_note(%{judgment_style: :compass}) do
+    """
+    Compass knowledge protocol is active for this run.
+    - Treat Compass as the explicit map you build before you render a final answer.
+    - Use four directions:
+      NORTH = genealogy, origins, context, or upstream dependencies.
+      WEST = family resemblance, analogies, adjacent patterns, or nearby cases.
+      EAST = contradictions, omissions, alternatives, critiques, or boundary conditions.
+      SOUTH = implications, applications, downstream effects, trajectories, or next moves.
+    - Build a Python dict named `compass_map` with this shape:
+      {
+        "north": [{"kind": "context|origin|dependency|genealogy", "text": "...", "evidence": ["optional source note"]}],
+        "west":  [{"kind": "adjacent|similarity|analogy|family", "text": "...", "evidence": ["optional source note"]}],
+        "east":  [{"kind": "contradiction|missing|alternative|boundary|critique", "text": "...", "evidence": ["optional source note"]}],
+        "south": [{"kind": "implication|application|downstream|trajectory|next_step", "text": "...", "evidence": ["optional source note"]}],
+        "open_questions": ["optional unresolved question"],
+        "confidence": "low|medium|high"
+      }
+    - Call `SET_COMPASS(compass_map)` once you have a meaningful map, and update it if later evidence changes the map.
+    - Make implicit structure explicit. If a direction is weak or missing, inspect more before finalizing.
+    - The final answer can be rendered in whatever form best fits the user request, but it must be derivable from the stored Compass map.
+    """
+  end
+
+  defp judgment_style_note(_settings), do: nil
 end

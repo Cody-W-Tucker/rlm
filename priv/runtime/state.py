@@ -6,6 +6,7 @@ context = ""
 file_sources = []
 file_source_set = set()
 final_result = None
+compass_map = None
 
 evidence = {
     "search_patterns": [],
@@ -107,6 +108,15 @@ def get_final_result():
     return final_result
 
 
+def set_compass_map(value):
+    global compass_map
+    compass_map = value
+
+
+def get_compass_map():
+    return compass_map
+
+
 def reset_final_result():
     set_final_result(None)
 
@@ -129,6 +139,7 @@ def reset_tracking():
     global search_counter
     global hit_registry
     global read_followup_keys
+    global compass_map
     evidence = {
         "search_patterns": [],
         "search_queries": [],
@@ -141,6 +152,7 @@ def reset_tracking():
     search_counter = 0
     hit_registry = {}
     read_followup_keys = set()
+    compass_map = None
 
 
 def hit_registry_snapshot():

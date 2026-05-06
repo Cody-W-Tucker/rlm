@@ -14,6 +14,7 @@ defmodule Rlm.CLI do
     stdin: :boolean,
     model: :string,
     sub_model: :string,
+    judgment_style: :string,
     provider: :string,
     help: :boolean,
     verbose: :boolean
@@ -36,6 +37,7 @@ defmodule Rlm.CLI do
     --stdin            Read context from standard input
     --model ID         Override the configured root model
     --sub-model ID     Override the configured sub-query model
+    --judgment-style   Choose `default` or `compass` finalization discipline
     --provider NAME    Override the configured provider
     --verbose          Print progress events to stderr
   """
@@ -105,7 +107,9 @@ defmodule Rlm.CLI do
   defp build_settings(options) do
     overrides =
       options
-      |> Enum.filter(fn {key, _value} -> key in [:model, :sub_model, :provider] end)
+      |> Enum.filter(fn {key, _value} ->
+        key in [:model, :sub_model, :provider, :judgment_style]
+      end)
       |> Enum.into(%{})
 
     Settings.load(overrides)

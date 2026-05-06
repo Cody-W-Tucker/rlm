@@ -19,9 +19,16 @@ defmodule Rlm.Engine.Grounding.Policy do
     end
   end
 
-  def validate_final_answer(context_bundle, final_answer, details, iteration_records \\ []) do
+  def validate_final_answer(
+        context_bundle,
+        final_answer,
+        details,
+        iteration_records \\ [],
+        settings \\ nil
+      ) do
     if file_backed?(context_bundle) do
       with :ok <- validate_cited_paths(final_answer, details),
+           :ok <- validate_judgment_style(final_answer, details, settings),
            :ok <- validate_grounding_grade(context_bundle, iteration_records) do
         :ok
       end
@@ -78,6 +85,20 @@ defmodule Rlm.Engine.Grounding.Policy do
     }
   end
 
+  def annotate_details(context_bundle, details, settings) do
+    details = details || %{}
+
+    if settings && Map.get(settings, :judgment_style) == :compass do
+      Map.put(
+        details,
+        "compass_verification",
+        build_compass_verification_report(context_bundle, details)
+      )
+    else
+      details
+    end
+  end
+
   def read_units(context_bundle, metrics) do
     if line_delimited_corpus?(context_bundle) do
       max(Map.get(metrics, :read_files, 0), Map.get(metrics, :read_windows, 0))
@@ -101,6 +122,187 @@ defmodule Rlm.Engine.Grounding.Policy do
   end
 
   def cited_paths(_), do: []
+
+  defp validate_judgment_style(_final_answer, _details, nil), do: :ok
+  defp validate_judgment_style(_final_answer, _details, %{judgment_style: :default}), do: :ok
+
+  defp validate_judgment_style(_final_answer, details, %{judgment_style: :compass}) do
+    report =
+      details["compass_verification"] || details[:compass_verification] ||
+        build_compass_verification_report(%{}, details)
+
+    case report do
+      %{"status" => "ok"} -> :ok
+      %{} = report -> compass_validation_error(report)
+    end
+  end
+
+  defp validate_judgment_style(_final_answer, _details, _settings), do: :ok
+
+  defp compass_validation_error(report) do
+    missing = Map.get(report, "missing_quadrants", [])
+    weak = Map.get(report, "weak_quadrants", [])
+    unsupported = Map.get(report, "unsupported_entries", [])
+
+    parts =
+      []
+      |> maybe_append_report("missing quadrant(s): #{Enum.join(missing, ", ")}", missing != [])
+      |> maybe_append_report(
+        "weak quadrant(s): " <>
+          Enum.map_join(weak, "; ", fn item ->
+            "#{item["quadrant"]} (#{item["reason"]})"
+          end),
+        weak != []
+      )
+      |> maybe_append_report(
+        "unsupported entries: " <>
+          Enum.map_join(unsupported, "; ", fn item ->
+            "#{item["quadrant"]} (#{item["reason"]})"
+          end),
+        unsupported != []
+      )
+
+    {:error,
+     "Compass knowledge map is incomplete: #{Enum.join(parts, ". ")}. Fill the missing or weak directions with explicit Compass entries before finalizing."}
+  end
+
+  defp build_compass_verification_report(context_bundle, details) do
+    compass = details["compass"] || details[:compass]
+    quadrants = compass_quadrants(compass)
+    missing = Enum.filter(["north", "west", "east", "south"], &(quadrants[&1] == []))
+    weak = weak_compass_quadrants(quadrants)
+    unsupported = unsupported_compass_entries(quadrants)
+    evidence_backed = compass_evidence_backed?(quadrants)
+
+    weak =
+      if file_backed?(context_bundle || %{}) and not evidence_backed do
+        weak ++
+          [%{"quadrant" => "map", "reason" => "no evidence-backed Compass entries recorded"}]
+      else
+        weak
+      end
+
+    %{
+      "status" =>
+        if(missing == [] and weak == [] and unsupported == [], do: "ok", else: "incomplete"),
+      "missing_quadrants" => missing,
+      "weak_quadrants" => weak,
+      "unsupported_entries" => unsupported,
+      "quadrant_counts" =>
+        Enum.into(quadrants, %{}, fn {name, entries} -> {name, length(entries)} end),
+      "evidence_backed" => evidence_backed,
+      "confidence" => compass_confidence(compass)
+    }
+  end
+
+  defp compass_quadrants(compass) when is_map(compass) do
+    %{
+      "north" => normalize_compass_entries(compass["north"] || compass[:north]),
+      "west" => normalize_compass_entries(compass["west"] || compass[:west]),
+      "east" => normalize_compass_entries(compass["east"] || compass[:east]),
+      "south" => normalize_compass_entries(compass["south"] || compass[:south])
+    }
+  end
+
+  defp compass_quadrants(_), do: %{"north" => [], "west" => [], "east" => [], "south" => []}
+
+  defp normalize_compass_entries(entries) when is_list(entries) do
+    Enum.map(entries, fn
+      %{} = entry ->
+        %{
+          "kind" => to_string(entry["kind"] || entry[:kind] || ""),
+          "text" => to_string(entry["text"] || entry[:text] || ""),
+          "evidence" => normalize_evidence_list(entry["evidence"] || entry[:evidence] || [])
+        }
+
+      other ->
+        %{"kind" => "", "text" => to_string(other), "evidence" => []}
+    end)
+  end
+
+  defp normalize_compass_entries(_), do: []
+
+  defp normalize_evidence_list(entries) when is_list(entries), do: Enum.map(entries, &to_string/1)
+  defp normalize_evidence_list(entry) when is_binary(entry), do: [entry]
+  defp normalize_evidence_list(_), do: []
+
+  defp weak_compass_quadrants(quadrants) do
+    allowed = compass_kind_families()
+
+    Enum.flat_map(quadrants, fn {quadrant, entries} ->
+      cond do
+        entries == [] ->
+          []
+
+        Enum.all?(entries, &(String.trim(&1["text"]) == "")) ->
+          [%{"quadrant" => quadrant, "reason" => "entries have no substantive text"}]
+
+        Enum.all?(entries, &(not compass_kind_allowed?(quadrant, &1["kind"], allowed))) ->
+          [
+            %{
+              "quadrant" => quadrant,
+              "reason" => "entries do not use #{quadrant}-appropriate kinds"
+            }
+          ]
+
+        true ->
+          []
+      end
+    end)
+  end
+
+  defp unsupported_compass_entries(quadrants) do
+    allowed = compass_kind_families()
+
+    Enum.flat_map(quadrants, fn {quadrant, entries} ->
+      Enum.flat_map(entries, fn entry ->
+        cond do
+          String.trim(entry["text"]) == "" ->
+            [%{"quadrant" => quadrant, "reason" => "entry text is blank"}]
+
+          not compass_kind_allowed?(quadrant, entry["kind"], allowed) ->
+            [
+              %{
+                "quadrant" => quadrant,
+                "reason" => "kind `#{entry["kind"]}` does not match #{quadrant}"
+              }
+            ]
+
+          true ->
+            []
+        end
+      end)
+    end)
+  end
+
+  defp compass_kind_families do
+    %{
+      "north" => MapSet.new(["origin", "context", "dependency", "genealogy"]),
+      "west" => MapSet.new(["adjacent", "similarity", "analogy", "family"]),
+      "east" => MapSet.new(["contradiction", "missing", "alternative", "boundary", "critique"]),
+      "south" =>
+        MapSet.new(["implication", "application", "downstream", "trajectory", "next_step"])
+    }
+  end
+
+  defp compass_kind_allowed?(quadrant, kind, allowed) do
+    MapSet.member?(allowed[quadrant], String.trim(to_string(kind)))
+  end
+
+  defp compass_evidence_backed?(quadrants) do
+    Enum.any?(quadrants, fn {_quadrant, entries} ->
+      Enum.any?(entries, &(&1["evidence"] != []))
+    end)
+  end
+
+  defp compass_confidence(compass) when is_map(compass) do
+    to_string(compass["confidence"] || compass[:confidence] || "")
+  end
+
+  defp compass_confidence(_), do: ""
+
+  defp maybe_append_report(parts, text, true), do: parts ++ [text]
+  defp maybe_append_report(parts, _text, false), do: parts
 
   defp validate_cited_paths(final_answer, details) do
     cited_paths = cited_paths(final_answer)
@@ -157,7 +359,8 @@ defmodule Rlm.Engine.Grounding.Policy do
     read_files = Map.get(metrics, :read_files, 0)
 
     cond do
-      not line_delimited_corpus?(context_bundle) and read_files >= required_file_reads(context_bundle) ->
+      not line_delimited_corpus?(context_bundle) and
+          read_files >= required_file_reads(context_bundle) ->
         true
 
       read_files >= @minimum_multi_file_reads ->

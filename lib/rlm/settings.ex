@@ -4,6 +4,7 @@ defmodule Rlm.Settings do
   @enforce_keys [
     :provider,
     :model,
+    :judgment_style,
     :sub_model,
     :max_iterations,
     :max_depth,
@@ -17,6 +18,7 @@ defmodule Rlm.Settings do
   defstruct [
     :provider,
     :model,
+    :judgment_style,
     :sub_model,
     :api_key,
     :openai_base_url,
@@ -41,6 +43,7 @@ defmodule Rlm.Settings do
   @schema [
     provider: [type: {:in, [:openai, :mock]}, required: true],
     model: [type: :string, required: true],
+    judgment_style: [type: {:in, [:default, :compass]}, required: true],
     sub_model: [type: {:or, [:string, nil]}, required: true],
     api_key: [type: :string, required: true],
     openai_base_url: [type: :string, required: true],
@@ -69,6 +72,7 @@ defmodule Rlm.Settings do
     env = %{
       provider: nil,
       model: nil,
+      judgment_style: nil,
       sub_model: nil,
       api_key: nil,
       openai_base_url: nil,
@@ -112,6 +116,7 @@ defmodule Rlm.Settings do
     overrides
     |> reject_nil()
     |> normalize_provider()
+    |> normalize_judgment_style()
   end
 
   defp default_api_key(%{provider: :mock} = merged), do: Map.put_new(merged, :api_key, "mock-key")
@@ -139,6 +144,14 @@ defmodule Rlm.Settings do
     end
   end
 
+  defp normalize_judgment_style(cleaned) do
+    if Map.has_key?(cleaned, :judgment_style) do
+      Map.update!(cleaned, :judgment_style, &env_judgment_style/1)
+    else
+      cleaned
+    end
+  end
+
   defp reject_nil(map) do
     map
     |> Enum.reject(fn {_key, value} -> is_nil(value) end)
@@ -155,6 +168,19 @@ defmodule Rlm.Settings do
       "openai" -> :openai
       "mock" -> :mock
       other -> raise ArgumentError, "unsupported provider #{inspect(other)}"
+    end
+  end
+
+  defp env_judgment_style(nil), do: nil
+  defp env_judgment_style(style) when style in [:default, :compass], do: style
+
+  defp env_judgment_style(style) when is_binary(style) do
+    style
+    |> String.downcase()
+    |> case do
+      "default" -> :default
+      "compass" -> :compass
+      other -> raise ArgumentError, "unsupported judgment_style #{inspect(other)}"
     end
   end
 

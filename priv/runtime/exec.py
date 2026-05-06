@@ -152,6 +152,7 @@ def try_async_wrapper_exec(code, captured_stderr):
 def build_exec_result(captured_stdout, captured_stderr, meta):
     details = dict(meta.get("details") or {})
     details["evidence"] = state.evidence_snapshot()
+    details["compass"] = state.get_compass_map()
     final_result = state.get_final_result()
 
     return {

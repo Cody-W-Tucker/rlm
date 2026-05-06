@@ -5,9 +5,20 @@ defmodule Rlm.Engine.Finalizer do
   alias Rlm.Engine.Grounding.Grade, as: GroundingGrade
   alias Rlm.Engine.RunState
 
-  def finalize_result(prompt, context_bundle, answer, status, completed?, iterations, records, run_state) do
+  def finalize_result(
+        prompt,
+        context_bundle,
+        answer,
+        status,
+        completed?,
+        iterations,
+        records,
+        run_state
+      ) do
     snapshot = RunState.snapshot(run_state)
     grounding = GroundingGrade.assess(context_bundle, records)
+    compass = latest_detail(records, "compass")
+    compass_verification = latest_detail(records, "compass_verification")
 
     %{
       prompt: prompt,
@@ -20,6 +31,8 @@ defmodule Rlm.Engine.Finalizer do
       output_tokens: snapshot.output_tokens,
       depth: 0,
       best_answer_reason: snapshot.best_answer_reason,
+      compass: compass,
+      compass_verification: compass_verification,
       recovery_flags: snapshot.recovery_flags,
       failure_history: snapshot.failure_history,
       last_successful_subquery: snapshot.last_successful_subquery,
@@ -91,4 +104,14 @@ defmodule Rlm.Engine.Finalizer do
 
   defp emit(nil, _event), do: :ok
   defp emit(fun, event), do: fun.(event)
+
+  defp latest_detail(records, key) do
+    records
+    |> Enum.reverse()
+    |> Enum.find_value(fn record ->
+      details = record[:details] || record["details"] || %{}
+      value = details[key]
+      if is_nil(value), do: nil, else: value
+    end)
+  end
 end

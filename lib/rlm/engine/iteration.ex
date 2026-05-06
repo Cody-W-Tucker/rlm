@@ -146,6 +146,16 @@ defmodule Rlm.Engine.Iteration do
 
         case BlockRunner.execute_code_blocks(repl, code_blocks) do
           {:ok, exec_result} ->
+            exec_result = %{
+              exec_result
+              | details:
+                  GroundingPolicy.annotate_details(
+                    context_bundle,
+                    exec_result.details || %{},
+                    settings
+                  )
+            }
+
             if not exec_result.has_final do
               RunState.remember_best_answer_from_exec(run_state, exec_result)
             end
@@ -168,7 +178,7 @@ defmodule Rlm.Engine.Iteration do
 
             next_records = records ++ [record]
 
-            case classify_exec_result(context_bundle, exec_result, next_records) do
+            case classify_exec_result(context_bundle, exec_result, next_records, settings) do
               {:finalized, final_answer} ->
                 RunState.remember_best_answer(run_state, final_answer, :final_value)
 
@@ -324,7 +334,7 @@ defmodule Rlm.Engine.Iteration do
     end
   end
 
-  defp classify_exec_result(context_bundle, exec_result, iteration_records) do
+  defp classify_exec_result(context_bundle, exec_result, iteration_records, settings) do
     cond do
       exec_result.has_final and is_binary(exec_result.final_value) and
           String.trim(exec_result.final_value) != "" ->
@@ -334,7 +344,8 @@ defmodule Rlm.Engine.Iteration do
                context_bundle,
                final_answer,
                exec_result.details || %{},
-               iteration_records
+               iteration_records,
+               settings
              ) do
           :ok -> {:finalized, final_answer}
           {:error, reason} -> {:recoverable_failure, Failure.from_stage(:grounding, reason)}

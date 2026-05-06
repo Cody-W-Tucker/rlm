@@ -17,6 +17,7 @@ defmodule Rlm.SettingsTest do
     Application.put_env(:rlm, Settings,
       provider: :mock,
       model: "config-model",
+      judgment_style: :default,
       sub_model: nil,
       api_key: "config-key",
       openai_base_url: "https://example.invalid",
@@ -49,6 +50,7 @@ defmodule Rlm.SettingsTest do
     Application.put_env(:rlm, Settings,
       provider: :openai,
       model: "gpt-5.4-mini",
+      judgment_style: :default,
       sub_model: nil,
       api_key: "",
       openai_base_url: "https://api.openai.com/v1",
@@ -80,5 +82,10 @@ defmodule Rlm.SettingsTest do
   test "validates max_lazy_file_bytes range" do
     assert {:error, message} = Settings.load(%{provider: :mock, max_lazy_file_bytes: 0})
     assert message =~ "max_lazy_file_bytes"
+  end
+
+  test "normalizes judgment_style overrides from cli-style strings" do
+    assert {:ok, settings} = Settings.load(%{provider: :mock, judgment_style: "compass"})
+    assert settings.judgment_style == :compass
   end
 end

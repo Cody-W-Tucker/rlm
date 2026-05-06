@@ -57,4 +57,22 @@ defmodule Rlm.CLI.WorkflowTest do
     assert stderr =~ "iteration 1 stdout:"
     assert stderr =~ "workflow context"
   end
+
+  test "cli accepts compass judgment style overrides" do
+    output =
+      capture_io(fn ->
+        assert :ok =
+                 CLI.dispatch([
+                   "--provider",
+                   "mock",
+                   "--judgment-style",
+                   "compass",
+                   "--text",
+                   "workflow context",
+                   "what is loaded?"
+                 ])
+      end)
+
+    assert output =~ "Observed context"
+  end
 end
