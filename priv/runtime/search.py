@@ -81,6 +81,33 @@ class JsonlFieldHit:
         raise KeyError(key)
 
 
+class JsonPathHit:
+    def __init__(self, path, json_path, value, query_id=None, query_kind=None, query_pattern=None):
+        self.path = path
+        self.json_path = json_path
+        self.value = value
+        self.query_id = query_id
+        self.query_kind = query_kind
+        self.query_pattern = query_pattern
+
+    def __str__(self):
+        return f"{self.path}:{self.json_path}={self.value}"
+
+    def __repr__(self):
+        return str(self)
+
+    def __getitem__(self, key):
+        if key == 0:
+            return self.path
+        if key == 1:
+            return self.json_path
+        if key == 2:
+            return self.value
+        if key in {"path", "json_path", "value"}:
+            return getattr(self, key)
+        raise KeyError(key)
+
+
 def match_preview(path, line, window):
     safe_window = max(0, int(window))
     start = max(1, line - safe_window)

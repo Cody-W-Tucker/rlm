@@ -23,7 +23,7 @@ defmodule Rlm.Engine.Prompt.ContextStrategy do
     access_hint =
       cond do
         lazy_file_count > 0 and inline_chars > 0 ->
-          "Inline text is available in `context`. For file-backed sources, use `list_files()` or `sample_files()` to inspect file shape, `peek_file(path)` for light inspection, `read_file(path)` for deeper reads, `grep_files(pattern)` for reusable hits, and `grep_open(pattern)` for search-plus-preview. For JSONL corpora, use `sample_jsonl(path)` to inspect schema and `grep_jsonl_fields(path, field_pattern, text_pattern)` for record-aware retrieval."
+          "Inline text is available in `context`. For file-backed sources, use `list_files()` or `sample_files()` to inspect file shape, `peek_file(path)` for light inspection, `read_file(path)` for deeper reads, `grep_files(pattern)` for reusable hits, and `grep_open(pattern)` for search-plus-preview. For `.json` documents, use `sample_json(path)`, `grep_json_paths(path, path_pattern, value_pattern)`, and `read_json(path, json_path)` for bounded structured inspection. For JSONL corpora, use `sample_jsonl(path)` to inspect schema and `grep_jsonl_fields(path, field_pattern, text_pattern)` for record-aware retrieval."
 
         lazy_file_count > 0 ->
           "Context is file-backed. Discover what is actually there rather than hunting for keywords that confirm your initial idea. Use `list_files()` or `sample_files()` to understand the corpus shape, then inspect representative files to see what they contain. For multi-file questions, start with neutral behavioral markers and local examples, form a tentative claim from the first reads, then run at least one weakening or boundary-check pass before final synthesis. For large line-delimited files, targeted `read_file()` windows count as direct inspection."
@@ -41,7 +41,7 @@ defmodule Rlm.Engine.Prompt.ContextStrategy do
           "This looks medium-sized. Start with direct synthesis, then one narrow sub-query if needed, and only then consider small sequential chunking."
 
         lazy_file_count > 0 ->
-          "This looks file-backed. First decide whether filename or path structure is informative. If it is, derive candidates from file shape. If it is not, derive candidates from neutral behavioral markers and concrete examples first, then derive weakening or boundary patterns from your tentative claim instead of searching abstract theory words. For JSONL or chat-history corpora, sample schema first, then retrieve records through field-aware searches and targeted windows. Recurse only on the top candidates, keep the working set small, and let the read passages update the claim before final synthesis."
+          "This looks file-backed. First decide whether filename or path structure is informative. If it is, derive candidates from file shape. If it is not, derive candidates from neutral behavioral markers and concrete examples first, then derive weakening or boundary patterns from your tentative claim instead of searching abstract theory words. For `.json` documents, sample the shape first, search scalar paths and values, then inspect the exact objects that matter. For JSONL or chat-history corpora, sample schema first, then retrieve records through field-aware searches and targeted windows. Recurse only on the top candidates, keep the working set small, and let the read passages update the claim before final synthesis."
 
         true ->
           "This looks large. Structure the work carefully, keep chunk counts low, and maintain a best-so-far answer."

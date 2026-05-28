@@ -3,6 +3,7 @@ import re
 
 from runtime import files
 from runtime import state
+from runtime.jsondoc import iter_json_scalar_fields
 from runtime.search import JsonlFieldHit
 
 
@@ -70,21 +71,6 @@ def sample_jsonl(path, limit=20):
                 records.append(item)
 
     return records
-
-
-def iter_json_scalar_fields(value, prefix=""):
-    if isinstance(value, dict):
-        for key, child in value.items():
-            child_prefix = f"{prefix}.{key}" if prefix else str(key)
-            yield from iter_json_scalar_fields(child, child_prefix)
-    elif isinstance(value, list):
-        for index, child in enumerate(value):
-            child_prefix = f"{prefix}[{index}]" if prefix else f"[{index}]"
-            yield from iter_json_scalar_fields(child, child_prefix)
-    elif value is not None:
-        yield prefix or "$", str(value)
-
-
 def grep_jsonl_fields(path, field_pattern, text_pattern=".*", limit=20):
     normalized = state.normalize_allowed_path(path)
     compiled_field = re.compile(field_pattern)

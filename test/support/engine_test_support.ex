@@ -577,6 +577,34 @@ defmodule Rlm.TestLargeOffsetFileAccessProvider do
   end
 end
 
+defmodule Rlm.TestJsonDocProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(_history, _system_prompt, _settings) do
+    {:ok,
+     %{
+       text: """
+       ```python
+       path = list_files()[0]
+       sample = sample_json(path, limit=4)
+       hits = grep_json_paths(path, r"people\[[0-9]+\]\.mentions\[[0-9]+\]\.matched_lines\[[0-9]+\]\.text", r"scope|trust", limit=5)
+       selected = read_json(path, hits[0].json_path)
+       print(sample)
+       print(hits)
+       print(selected)
+       FINAL(hits[0].json_path + "|" + hits[0].value)
+       ```
+       """,
+       input_tokens: 0,
+       output_tokens: 0
+     }}
+  end
+
+  def complete_subquery(_sub_context, _instruction, _settings) do
+    {:ok, %{text: "unused", input_tokens: 0, output_tokens: 0}}
+  end
+end
+
 defmodule Rlm.TestJsonlRetrievalProvider do
   @behaviour Rlm.Providers.Provider
 
