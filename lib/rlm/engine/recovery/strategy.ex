@@ -34,6 +34,9 @@ defmodule Rlm.Engine.Recovery.Strategy do
       :insufficient_grounding ->
         Map.merge(base, %{broad_subqueries_disabled: true})
 
+      :unpresentable_final_answer ->
+        Map.merge(base, %{broad_subqueries_disabled: true})
+
       :ungrounded_final_answer ->
         Map.merge(base, %{broad_subqueries_disabled: true})
 
@@ -76,6 +79,10 @@ defmodule Rlm.Engine.Recovery.Strategy do
 
   def recovery_instruction(%Failure{class: :insufficient_grounding}) do
     "Do not finalize from scouting alone or repeated search. First call `assess_evidence()` with your current hits, reads, and tentative claim so you know whether to read more, run a counterexample pass, or finalize. Then promote the strongest candidates to `read_file()` or `read_jsonl()`, derive weakening patterns from your claim, and keep narrowing the claim until you have either at least 3 relevant files or at least 3 targeted line windows backed by at least one hit-followup read before finalizing."
+  end
+
+  def recovery_instruction(%Failure{class: :unpresentable_final_answer}) do
+    "Do not dump raw evidence, JSON, Python repr, or instrumentation logs to the user. Reuse only the inspected reads already in memory, synthesize one concise prose answer from them, and if the evidence is still too weak, return a short honest limitation instead of the dump."
   end
 
   def recovery_instruction(_failure) do

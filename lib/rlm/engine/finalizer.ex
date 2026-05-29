@@ -1,6 +1,7 @@
 defmodule Rlm.Engine.Finalizer do
   @moduledoc false
 
+  alias Rlm.Engine.AnswerQuality
   alias Rlm.Engine.Failure
   alias Rlm.Engine.Grounding.Grade, as: GroundingGrade
   alias Rlm.Engine.RunState
@@ -46,7 +47,7 @@ defmodule Rlm.Engine.Finalizer do
     snapshot = RunState.snapshot(run_state)
 
     answer =
-      case snapshot.best_answer_so_far do
+      case presentable_partial_answer(snapshot.best_answer_so_far) do
         nil ->
           "The run reached its iteration limit before it could produce a reliable answer."
 
@@ -59,7 +60,11 @@ defmodule Rlm.Engine.Finalizer do
   end
 
   def error_result(prompt, context_bundle, failure, run_state, iterations \\ 0, records \\ []) do
-    answer = render_failure_answer(RunState.snapshot(run_state).best_answer_so_far, failure)
+    answer =
+      render_failure_answer(
+        presentable_partial_answer(RunState.snapshot(run_state).best_answer_so_far),
+        failure
+      )
 
     finalize_result(
       prompt,
@@ -101,6 +106,14 @@ defmodule Rlm.Engine.Finalizer do
     best_answer <>
       "\n\nNote: this is the best partial answer available because #{Failure.diagnosis(failure)}"
   end
+
+  defp presentable_partial_answer(answer) when is_binary(answer) do
+    trimmed = String.trim(answer)
+
+    if trimmed != "" and AnswerQuality.presentable?(trimmed), do: trimmed, else: nil
+  end
+
+  defp presentable_partial_answer(_answer), do: nil
 
   defp emit(nil, _event), do: :ok
   defp emit(fun, event), do: fun.(event)

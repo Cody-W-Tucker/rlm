@@ -42,6 +42,36 @@ defmodule Rlm.Engine.CoreRuntimeTest do
     assert hd(result.iteration_records).stdout =~ "=== KEY EXAMPLE 1 ==="
   end
 
+  test "does not promote raw evidence sub-query output to the best partial answer" do
+    settings = TestHelpers.settings(%{max_iterations: 1, max_sub_queries: 2})
+    bundle = %{entries: [], text: "abcdef", bytes: 6}
+
+    assert {:ok, result} =
+             Engine.run("summarize", bundle, settings, Rlm.TestRawEvidenceSubqueryProvider)
+
+    assert result.status == :max_iterations
+    refute result.completed?
+
+    assert result.answer ==
+             "The run reached its iteration limit before it could produce a reliable answer."
+
+    assert result.best_answer_reason == nil
+    assert result.last_successful_subquery_result == nil
+  end
+
+  test "recovers when FINAL tries to dump raw evidence" do
+    settings = TestHelpers.settings(%{max_iterations: 2})
+    bundle = %{entries: [], text: "abcdef", bytes: 6}
+
+    assert {:ok, result} =
+             Engine.run("summarize", bundle, settings, Rlm.TestRawFinalRecoveryProvider)
+
+    assert result.completed?
+    assert result.answer == "Recovered concise answer"
+    assert result.iterations == 2
+    assert Enum.any?(result.failure_history, &(&1.class == :unpresentable_final_answer))
+  end
+
   test "strips malformed fenced responses before execution" do
     settings = TestHelpers.settings(%{max_iterations: 1})
     bundle = %{entries: [], text: "abcdef", bytes: 6}

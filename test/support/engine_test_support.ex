@@ -278,7 +278,8 @@ defmodule Rlm.TestInterleavedFenceProvider do
   def generate_code(_history, _system_prompt, _settings) do
     {:ok,
      %{
-       text: "```python\nvalue = \"alpha\"\nprint(value)\n``````python\nvalue = value + \" beta\"\nprint(value)\nFINAL(value)\n```",
+       text:
+         "```python\nvalue = \"alpha\"\nprint(value)\n``````python\nvalue = value + \" beta\"\nprint(value)\nFINAL(value)\n```",
        input_tokens: 0,
        output_tokens: 0
      }}
@@ -436,6 +437,56 @@ defmodule Rlm.TestSilentSubqueryRecoveryProvider do
 
   def complete_subquery(_sub_context, _instruction, _settings) do
     {:ok, %{text: "silent subquery answer", input_tokens: 0, output_tokens: 0}}
+  end
+end
+
+defmodule Rlm.TestRawEvidenceSubqueryProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(_history, _system_prompt, _settings) do
+    {:ok,
+     %{
+       text: "```python\nanswer = llm_query(context, \"Summarize this chunk\")\n```",
+       input_tokens: 0,
+       output_tokens: 0
+     }}
+  end
+
+  def complete_subquery(_sub_context, _instruction, _settings) do
+    {:ok,
+     %{
+       text:
+         "[{'line': 1, 'record': {'body': 'alpha'}}, {'line': 2, 'record': {'body': 'beta'}}]",
+       input_tokens: 0,
+       output_tokens: 0
+     }}
+  end
+end
+
+defmodule Rlm.TestRawFinalRecoveryProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(history, _system_prompt, _settings) do
+    if Enum.any?(history, &String.contains?(&1.content, "unpresentable_final_answer")) do
+      {:ok,
+       %{
+         text: "```python\nFINAL(\"Recovered concise answer\")\n```",
+         input_tokens: 0,
+         output_tokens: 0
+       }}
+    else
+      {:ok,
+       %{
+         text:
+           "```python\nFINAL(\"[{'line': 1, 'record': {'body': 'alpha'}}, {'line': 2, 'record': {'body': 'beta'}}, {'line': 3, 'record': {'body': 'gamma'}}]\")\n```",
+         input_tokens: 0,
+         output_tokens: 0
+       }}
+    end
+  end
+
+  def complete_subquery(_sub_context, _instruction, _settings) do
+    {:ok, %{text: "unused", input_tokens: 0, output_tokens: 0}}
   end
 end
 
@@ -605,6 +656,30 @@ defmodule Rlm.TestJsonDocProvider do
   end
 end
 
+defmodule Rlm.TestRenderJsonProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(_history, _system_prompt, _settings) do
+    {:ok,
+     %{
+       text: """
+       ```python
+       path = list_files()[0]
+       rendered = render_json(path, "$.profile", limit=5)
+       print(rendered)
+       FINAL(rendered)
+       ```
+       """,
+       input_tokens: 0,
+       output_tokens: 0
+     }}
+  end
+
+  def complete_subquery(_sub_context, _instruction, _settings) do
+    {:ok, %{text: "unused", input_tokens: 0, output_tokens: 0}}
+  end
+end
+
 defmodule Rlm.TestJsonlRetrievalProvider do
   @behaviour Rlm.Providers.Provider
 
@@ -621,6 +696,53 @@ defmodule Rlm.TestJsonlRetrievalProvider do
        print(hits)
        print(records)
        FINAL(hits[0].field + "|" + hits[0].value)
+       ```
+       """,
+       input_tokens: 0,
+       output_tokens: 0
+     }}
+  end
+
+  def complete_subquery(_sub_context, _instruction, _settings) do
+    {:ok, %{text: "unused", input_tokens: 0, output_tokens: 0}}
+  end
+end
+
+defmodule Rlm.TestRenderJsonlProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(_history, _system_prompt, _settings) do
+    {:ok,
+     %{
+       text: """
+       ```python
+       path = list_files()[0]
+       rendered = render_jsonl(path, offset=2, limit=1)
+       print(rendered)
+       FINAL(rendered)
+       ```
+       """,
+       input_tokens: 0,
+       output_tokens: 0
+     }}
+  end
+
+  def complete_subquery(_sub_context, _instruction, _settings) do
+    {:ok, %{text: "unused", input_tokens: 0, output_tokens: 0}}
+  end
+end
+
+defmodule Rlm.TestInvalidSubqueryContextProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(_history, _system_prompt, _settings) do
+    {:ok,
+     %{
+       text: """
+       ```python
+       path = list_files()[0]
+       records = read_jsonl(path, offset=1, limit=1)
+       llm_query(records, "Summarize this chunk")
        ```
        """,
        input_tokens: 0,

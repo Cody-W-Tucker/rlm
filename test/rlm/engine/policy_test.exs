@@ -118,9 +118,14 @@ defmodule Rlm.Engine.PolicyTest do
     assert prompt =~ "Also tolerated: `path = files[0]['path']`"
     assert prompt =~ "Do not use `files[0].path`"
     assert prompt =~ "`read_json(path, json_path=\"$\", limit=40)`"
+    assert prompt =~ "`render_json(path, json_path=\"$\", limit=40)`"
     assert prompt =~ "`sample_json(path, limit=20)`"
-    assert prompt =~ "`grep_json_paths(path, path_pattern=\".*\", value_pattern=\".*\", limit=20)`"
+
+    assert prompt =~
+             "`grep_json_paths(path, path_pattern=\".*\", value_pattern=\".*\", limit=20)`"
+
     assert prompt =~ "`read_jsonl(path, offset=1, limit=20)`"
+    assert prompt =~ "`render_jsonl(path, offset=1, limit=20)`"
     assert prompt =~ "`sample_jsonl(path, limit=20)`"
     assert prompt =~ "`grep_jsonl_fields(path, field_pattern, text_pattern=\".*\", limit=20)`"
     assert prompt =~ "first search neutral behavioral markers and nearby phrasing"
@@ -129,6 +134,9 @@ defmodule Rlm.Engine.PolicyTest do
     assert prompt =~ "prefer `peek_hit(hit)` or `open_hit(hit)`"
     assert prompt =~ "For structured `.json` documents, sample keys and scalar paths first"
     assert prompt =~ "For large line-delimited files such as `jsonl`, logs, CSV, or TSV"
+    assert prompt =~ "Sub-queries are text-only"
+    assert prompt =~ "Do not pass raw dict/list outputs"
+    assert prompt =~ "render structured evidence into plain text"
 
     assert prompt =~
              "For JSONL or chat-history corpora, first inspect the schema with `sample_jsonl()`"
@@ -137,8 +145,13 @@ defmodule Rlm.Engine.PolicyTest do
              "Hit objects from `grep_files()`, `grep_open()`, `grep_json_paths()`, and `grep_jsonl_fields()` expose attributes"
 
     assert prompt =~ "Prefer attribute access for hits"
-    assert prompt =~ "Good: `hit.path`, `hit.line`, `hit.text`, `hit.json_path`, `hit.field`, `hit.value`"
-    assert prompt =~ "Also tolerated: `hit['line']`, `hit['json_path']`, `hit['field']`, `hit['value']`"
+
+    assert prompt =~
+             "Good: `hit.path`, `hit.line`, `hit.text`, `hit.json_path`, `hit.field`, `hit.value`"
+
+    assert prompt =~
+             "Also tolerated: `hit['line']`, `hit['json_path']`, `hit['field']`, `hit['value']`"
+
     assert prompt =~ "Tuple-style indexing like `hit[0]`, `hit[1]` may work for compatibility"
     assert prompt =~ "a targeted `read_file()` window counts as direct inspection"
     assert prompt =~ "do not force every claim into a `(from /path/to/file)` label"

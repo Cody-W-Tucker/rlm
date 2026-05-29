@@ -75,6 +75,16 @@ def stdin_reader_loop():
 
 
 def llm_query(sub_context, instruction=""):
+    if not isinstance(sub_context, str):
+        raise TypeError(
+            "llm_query sub_context must be a string. Render tool output into plain text before handing it to a sub-query."
+        )
+
+    if instruction is None:
+        instruction = ""
+    elif not isinstance(instruction, str):
+        raise TypeError("llm_query instruction must be a string.")
+
     request_id = uuid.uuid4().hex[:12]
     event = threading.Event()
     _pending_results[request_id] = event

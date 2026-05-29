@@ -124,6 +124,15 @@ defmodule Rlm.Engine.Failure do
 
   def status(%__MODULE__{class: class}), do: class
 
+  def unpresentable_final_answer(reason) do
+    build(
+      :unpresentable_final_answer,
+      :runtime,
+      "Final answer is not user-presentable: #{reason}.",
+      true
+    )
+  end
+
   defp classify_provider(message) do
     cond do
       timeout_message?(message) ->
@@ -245,6 +254,10 @@ defmodule Rlm.Engine.Failure do
   defp advice_for(:insufficient_grounding),
     do:
       "the final answer relied on scouting evidence that was too weak for the corpus. Promote the strongest search hits into targeted `read_file()` or `read_jsonl()` windows before finalizing."
+
+  defp advice_for(:unpresentable_final_answer),
+    do:
+      "the final answer was a raw evidence or instrumentation dump. Synthesize from the inspected evidence or return a concise limitation instead of dumping the trace."
 
   defp advice_for(:subquery_budget_exhausted),
     do: "the run exhausted its sub-query budget. Finalize from the best answer collected so far."

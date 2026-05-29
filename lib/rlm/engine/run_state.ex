@@ -1,6 +1,8 @@
 defmodule Rlm.Engine.RunState do
   @moduledoc "Mutable run state for counters, recovery flags, and best-so-far answers."
 
+  alias Rlm.Engine.AnswerQuality
+
   def start_link do
     Agent.start_link(fn ->
       %{
@@ -52,14 +54,15 @@ defmodule Rlm.Engine.RunState do
   def remember_subquery_success(state, instruction, result_text) do
     Agent.update(state, fn current ->
       trimmed = if is_binary(result_text), do: String.trim(result_text), else: ""
+      presentable = trimmed != "" and AnswerQuality.presentable?(trimmed)
 
       next = %{
         current
         | last_successful_subquery: instruction,
-          last_successful_subquery_result: if(trimmed == "", do: nil, else: trimmed)
+          last_successful_subquery_result: if(presentable, do: trimmed, else: nil)
       }
 
-      if trimmed == "" do
+      if not presentable do
         next
       else
         %{next | best_answer_so_far: trimmed, best_answer_reason: :subquery_success}
@@ -74,11 +77,12 @@ defmodule Rlm.Engine.RunState do
   def remember_partial_subquery(state, instruction, partial_text) do
     Agent.update(state, fn current ->
       next = %{current | last_successful_subquery: instruction}
+      trimmed = if is_binary(partial_text), do: String.trim(partial_text), else: ""
 
-      if is_binary(partial_text) and String.trim(partial_text) != "" do
+      if trimmed != "" and AnswerQuality.presentable?(trimmed) do
         %{
           next
-          | best_answer_so_far: String.trim(partial_text),
+          | best_answer_so_far: trimmed,
             best_answer_reason: :partial_subquery
         }
       else
@@ -146,6 +150,9 @@ defmodule Rlm.Engine.RunState do
         nil
 
       likely_instrumentation_output?(trimmed) ->
+        nil
+
+      not AnswerQuality.presentable?(trimmed) ->
         nil
 
       true ->

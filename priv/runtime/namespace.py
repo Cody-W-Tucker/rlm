@@ -36,6 +36,8 @@ def refresh_user_ns():
             "read_file": files.read_file,
             "read_json": jsondoc.read_json,
             "read_jsonl": jsonl.read_jsonl,
+            "render_json": jsondoc.render_json,
+            "render_jsonl": jsonl.render_jsonl,
             "sample_json": jsondoc.sample_json,
             "sample_jsonl": jsonl.sample_jsonl,
             "peek_file": files.peek_file,

@@ -40,20 +40,22 @@ defmodule Rlm.Engine.Prompt.Base do
     5. `read_file(path, offset=1, limit=200)`: read a specific allowed file; returns a single string with `"N: line content"` per line. Use `print(read_file(...))` to display it. Do NOT iterate over the return value.
     6. `read_json(path, json_path="$", limit=40)`: inspect one JSON value from an allowed `.json` document. Returns a bounded object/array/scalar wrapper with `json_path` and truncation metadata.
     7. `sample_json(path, limit=20)`: summarize a JSON document with top-level keys and representative scalar paths.
-    8. `grep_json_paths(path, path_pattern=".*", value_pattern=".*", limit=20)`: search scalar JSON paths and values, returning hits with `.path`, `.json_path`, and `.value`.
-    9. `read_jsonl(path, offset=1, limit=20)`: parse a small JSONL record window and return `[{"line": n, "record": ...}]` entries.
-    10. `sample_jsonl(path, limit=20)`: evenly sample JSONL records across a file to understand schema and time/range variation.
-    11. `grep_jsonl_fields(path, field_pattern, text_pattern=".*", limit=20)`: search parsed JSONL scalar fields and return hits with `.path`, `.line`, `.field`, and `.value`.
-    12. `grep_files(pattern, limit=50, path=None)`: regex search across allowed files and return reusable hit objects with `.path`, `.line`, `.text`, and string rendering as `path:line: text`. Optional `path` narrows search to one allowed file or an allowed path prefix.
-    13. `grep_open(pattern, limit=10, window=12, path=None)`: search across allowed files and return hit objects with `.path`, `.line`, `.text`, and `.preview` for immediate inspection. Optional `path` narrows search to one allowed file or an allowed path prefix.
-    14. `peek_hit(hit, before=5, after=10)`: inspect lines around a hit without manually computing file offsets.
-    15. `open_hit(hit, window=12)`: turn a hit into an opened hit with a `.preview` window around the match.
-    16. `assess_evidence(question, hits=None, reads=None, hypothesis=None)`: summarize current support, gaps, suggested reads, and whether to read more, run a counterexample pass, or finalize.
-    17. `llm_query(sub_context, instruction)`: ask a sub-query over a chunk.
-    18. `async_llm_query(sub_context, instruction)`: async wrapper for parallel chunk work.
-    19. `FINAL(answer)` and `FINAL_VAR(value)`: finish with the final answer.
-    20. `SET_COMPASS(map_value)` and `GET_COMPASS()`: store and inspect the current Compass knowledge map for this run.
-    21. `SubqueryError`: exception raised when a sub-query fails.
+    8. `render_json(path, json_path="$", limit=40)`: render one inspected JSON value into bounded plain text for quoting, printing, or sub-query handoff.
+    9. `grep_json_paths(path, path_pattern=".*", value_pattern=".*", limit=20)`: search scalar JSON paths and values, returning hits with `.path`, `.json_path`, and `.value`.
+    10. `read_jsonl(path, offset=1, limit=20)`: parse a small JSONL record window and return `[{"line": n, "record": ...}]` entries.
+    11. `render_jsonl(path, offset=1, limit=20)`: render a small JSONL record window into bounded plain text for quoting, printing, or sub-query handoff.
+    12. `sample_jsonl(path, limit=20)`: evenly sample JSONL records across a file to understand schema and time/range variation.
+    13. `grep_jsonl_fields(path, field_pattern, text_pattern=".*", limit=20)`: search parsed JSONL scalar fields and return hits with `.path`, `.line`, `.field`, and `.value`.
+    14. `grep_files(pattern, limit=50, path=None)`: regex search across allowed files and return reusable hit objects with `.path`, `.line`, `.text`, and string rendering as `path:line: text`. Optional `path` narrows search to one allowed file or an allowed path prefix.
+    15. `grep_open(pattern, limit=10, window=12, path=None)`: search across allowed files and return hit objects with `.path`, `.line`, `.text`, and `.preview` for immediate inspection. Optional `path` narrows search to one allowed file or an allowed path prefix.
+    16. `peek_hit(hit, before=5, after=10)`: inspect lines around a hit without manually computing file offsets.
+    17. `open_hit(hit, window=12)`: turn a hit into an opened hit with a `.preview` window around the match.
+    18. `assess_evidence(question, hits=None, reads=None, hypothesis=None)`: summarize current support, gaps, suggested reads, and whether to read more, run a counterexample pass, or finalize.
+    19. `llm_query(sub_context, instruction)`: ask a sub-query over a chunk. `sub_context` must be plain text, not a dict/list/tool object.
+    20. `async_llm_query(sub_context, instruction)`: async wrapper for parallel chunk work.
+    21. `FINAL(answer)` and `FINAL_VAR(value)`: finish with the final answer.
+    22. `SET_COMPASS(map_value)` and `GET_COMPASS()`: store and inspect the current Compass knowledge map for this run.
+    23. `SubqueryError`: exception raised when a sub-query fails.
 
     Rules:
     - Respond with ONLY a single Python code block.
@@ -70,9 +72,11 @@ defmodule Rlm.Engine.Prompt.Base do
     - If filename/path structure is not informative, use `grep_files()` or `grep_open()` in two phases: first search neutral behavioral markers and nearby phrasing that would naturally surround the answer, then search for passages that would weaken, bound, or surprise your current claim.
     - When you need to scope a grep to one candidate file or folder, pass `path=...` to `grep_files()` or `grep_open()` instead of inventing a new helper.
     - After content search, prefer `peek_hit(hit)` or `open_hit(hit)` over hardcoding paths or slicing large file strings by character count.
-    - For structured `.json` documents, sample keys and scalar paths first with `sample_json()`, search with `grep_json_paths()`, and only then inspect the exact object you need with `read_json()`.
+    - For structured `.json` documents, sample keys and scalar paths first with `sample_json()`, search with `grep_json_paths()`, and only then inspect the exact object you need with `read_json()` or `render_json()`.
     - For large line-delimited files such as `jsonl`, logs, CSV, or TSV, do not treat the whole file as one document. Search first, then inspect small line windows with `peek_file(path, offset=...)` or `read_file(path, offset=..., limit=...)`.
     - For JSONL or chat-history corpora, first inspect the schema with `sample_jsonl()`, then search parsed fields with `grep_jsonl_fields()` before reading targeted windows.
+    - Sub-queries are text-only. Do not pass raw dict/list outputs from `read_json()`, `read_jsonl()`, `sample_json()`, or `sample_jsonl()` into `llm_query()`.
+    - Before `llm_query()`, render structured evidence into plain text with `render_json()`, `render_jsonl()`, or your own compact passage bundle built from direct reads.
     - Hit objects from `grep_files()`, `grep_open()`, `grep_json_paths()`, and `grep_jsonl_fields()` expose attributes like `.path`, `.line`, `.text`, `.json_path`, `.field`, and `.value`.
     - Prefer attribute access for hits. Good: `hit.path`, `hit.line`, `hit.text`, `hit.json_path`, `hit.field`, `hit.value`. Also tolerated: `hit['line']`, `hit['json_path']`, `hit['field']`, `hit['value']`. Tuple-style indexing like `hit[0]`, `hit[1]` may work for compatibility, but prefer named access when writing fresh code.
     - For multi-file file-backed questions, follow this sequence before finalizing: scout corpus shape, run a neutral retrieval pass, read surrounding passages, form a tentative claim, derive expected-nearby patterns and weakening patterns from that claim, run one challenge pass, then answer from the updated evidence set.
@@ -97,6 +101,7 @@ defmodule Rlm.Engine.Prompt.Base do
     - If a sub-query raises `SubqueryError`, catch it only to change strategy or finalize from the best available answer.
     - Keep a best-so-far answer in a variable and finalize early when it is good enough.
     - Filter and slice context with Python before calling llm_query().
+    - Keep sub-query handoff compact and inspected: a small rendered evidence packet beats a raw schema dump.
     - Prefer direct discovery over confirmation: inspect what is actually present rather than searching for evidence that matches your initial hypothesis.
     - For synthesis-heavy questions over large corpora, prefer a brief structured evidence pass first: draft a tentative claim, collect observed examples, derive expected-nearby and weakening patterns from that claim, read both kinds of passages, then keep a confidence estimate for the narrowed claim before writing prose.
     - Store intermediate results in variables because the REPL is persistent.

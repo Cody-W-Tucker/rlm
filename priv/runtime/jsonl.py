@@ -38,6 +38,23 @@ def read_jsonl(path, offset=1, limit=20):
     return jsonl_window(path, offset, limit)
 
 
+def render_jsonl(path, offset=1, limit=20):
+    records = read_jsonl(path, offset=offset, limit=limit)
+    lines = [f"Path: {state.normalize_allowed_path(path)}", f"Window: {int(offset)}:{int(limit)}"]
+
+    for item in records:
+        lines.append("")
+        lines.append(f"Line {item['line']}:")
+
+        if "record" in item:
+            lines.append(json.dumps(item["record"], indent=2, ensure_ascii=True))
+        else:
+            lines.append(f"Raw: {item['raw']}")
+            lines.append(f"Error: {item['error']}")
+
+    return "\n".join(lines)
+
+
 def sample_jsonl(path, limit=20):
     normalized = state.normalize_allowed_path(path)
     safe_limit = max(1, min(int(limit), 100))

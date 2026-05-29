@@ -1,6 +1,7 @@
 defmodule Rlm.Engine.Iteration do
   @moduledoc false
 
+  alias Rlm.Engine.AnswerQuality
   alias Rlm.Engine.Execution.BlockRunner
   alias Rlm.Engine.Failure
   alias Rlm.Engine.Finalizer
@@ -340,15 +341,21 @@ defmodule Rlm.Engine.Iteration do
           String.trim(exec_result.final_value) != "" ->
         final_answer = String.trim(exec_result.final_value)
 
-        case GroundingPolicy.validate_final_answer(
-               context_bundle,
-               final_answer,
-               exec_result.details || %{},
-               iteration_records,
-               settings
-             ) do
-          :ok -> {:finalized, final_answer}
-          {:error, reason} -> {:recoverable_failure, Failure.from_stage(:grounding, reason)}
+        case AnswerQuality.rejection_reason(final_answer) do
+          nil ->
+            case GroundingPolicy.validate_final_answer(
+                   context_bundle,
+                   final_answer,
+                   exec_result.details || %{},
+                   iteration_records,
+                   settings
+                 ) do
+              :ok -> {:finalized, final_answer}
+              {:error, reason} -> {:recoverable_failure, Failure.from_stage(:grounding, reason)}
+            end
+
+          reason ->
+            {:recoverable_failure, Failure.unpresentable_final_answer(reason)}
         end
 
       true ->

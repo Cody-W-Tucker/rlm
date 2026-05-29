@@ -52,6 +52,62 @@ defmodule Rlm.Engine.JsonlTest do
     assert stdout =~ "Semaphore"
   end
 
+  test "render_jsonl produces plain-text handoff output" do
+    tmp = TestHelpers.temp_dir("rlm-engine-render-jsonl")
+    on_exit(fn -> File.rm_rf!(tmp) end)
+
+    lines =
+      [
+        %{"messages" => [%{"role" => "user", "content" => "alpha"}]},
+        %{"messages" => [%{"role" => "user", "content" => "beta"}]}
+      ]
+      |> Enum.map_join("\n", &Jason.encode!/1)
+      |> Kernel.<>("\n")
+
+    File.write!(Path.join(tmp, "history.jsonl"), lines)
+    settings = TestHelpers.settings(%{max_iterations: 1})
+
+    assert {:ok, bundle} = Loader.load({:path, Path.join(tmp, "history.jsonl")}, settings)
+
+    assert {:ok, result} =
+             Engine.run("render jsonl", bundle, settings, Rlm.TestRenderJsonlProvider)
+
+    assert result.completed?
+    assert result.answer =~ "Path:"
+    assert result.answer =~ "Window: 2:1"
+    assert result.answer =~ "Line 2:"
+    assert result.answer =~ "\"content\": \"beta\""
+  end
+
+  test "llm_query rejects non-string structured handoff input" do
+    tmp = TestHelpers.temp_dir("rlm-engine-invalid-subquery-context")
+    on_exit(fn -> File.rm_rf!(tmp) end)
+
+    lines =
+      [%{"messages" => [%{"role" => "user", "content" => "alpha"}]}]
+      |> Enum.map_join("\n", &Jason.encode!/1)
+      |> Kernel.<>("\n")
+
+    File.write!(Path.join(tmp, "history.jsonl"), lines)
+    settings = TestHelpers.settings(%{max_iterations: 1, max_sub_queries: 2})
+
+    assert {:ok, bundle} = Loader.load({:path, Path.join(tmp, "history.jsonl")}, settings)
+
+    assert {:ok, result} =
+             Engine.run(
+               "invalid subquery handoff",
+               bundle,
+               settings,
+               Rlm.TestInvalidSubqueryContextProvider
+             )
+
+    refute result.completed?
+    assert result.status == :python_exec_error
+    assert Enum.any?(result.failure_history, &(&1.class == :python_exec_error))
+    assert hd(result.failure_history).message =~ "llm_query sub_context must be a string"
+    assert hd(result.failure_history).message =~ "Render tool output into plain text"
+  end
+
   test "jsonl helpers tolerate dict-style access patterns used by the model" do
     tmp = TestHelpers.temp_dir("rlm-engine-jsonl-compat")
     on_exit(fn -> File.rm_rf!(tmp) end)
@@ -132,9 +188,12 @@ defmodule Rlm.Engine.JsonlTest do
     on_exit(fn -> File.rm_rf!(tmp) end)
 
     files = [
-      {"alpha.jsonl", [%{"messages" => [%{"role" => "user", "content" => "alpha decision evidence"}]}]},
-      {"beta.jsonl", [%{"messages" => [%{"role" => "user", "content" => "beta learning evidence"}]}]},
-      {"gamma.jsonl", [%{"messages" => [%{"role" => "user", "content" => "gamma adaptation evidence"}]}]}
+      {"alpha.jsonl",
+       [%{"messages" => [%{"role" => "user", "content" => "alpha decision evidence"}]}]},
+      {"beta.jsonl",
+       [%{"messages" => [%{"role" => "user", "content" => "beta learning evidence"}]}]},
+      {"gamma.jsonl",
+       [%{"messages" => [%{"role" => "user", "content" => "gamma adaptation evidence"}]}]}
     ]
 
     Enum.each(files, fn {name, records} ->
@@ -173,9 +232,21 @@ defmodule Rlm.Engine.JsonlTest do
 
     lines =
       [
-        %{"messages" => [%{"role" => "user", "content" => "start with the smallest version first"}]},
-        %{"messages" => [%{"role" => "user", "content" => "however, sometimes a direct answer is enough"}]},
-        %{"messages" => [%{"role" => "user", "content" => "scope the problem before adding more steps"}]}
+        %{
+          "messages" => [
+            %{"role" => "user", "content" => "start with the smallest version first"}
+          ]
+        },
+        %{
+          "messages" => [
+            %{"role" => "user", "content" => "however, sometimes a direct answer is enough"}
+          ]
+        },
+        %{
+          "messages" => [
+            %{"role" => "user", "content" => "scope the problem before adding more steps"}
+          ]
+        }
       ]
       |> Enum.map_join("\n", &Jason.encode!/1)
       |> Kernel.<>("\n")

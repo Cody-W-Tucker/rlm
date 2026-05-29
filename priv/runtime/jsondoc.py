@@ -131,6 +131,10 @@ def _truncate_value(value, limit):
     return {"type": _json_type_name(value), "value": value, "truncated": False}
 
 
+def _render_json_text(value):
+    return json.dumps(value, indent=2, ensure_ascii=True)
+
+
 def sample_json(path, limit=20):
     normalized, document = _load_json(path)
     state.evidence["previewed_files"].add(normalized)
@@ -161,6 +165,32 @@ def read_json(path, json_path="$", limit=40):
         "json_path": json_path or "$",
         **_truncate_value(value, limit),
     }
+
+
+def render_json(path, json_path="$", limit=40):
+    payload = read_json(path, json_path=json_path, limit=limit)
+    lines = [
+        f"Path: {payload['path']}",
+        f"JSON path: {payload['json_path']}",
+        f"Type: {payload['type']}",
+        f"Truncated: {'yes' if payload['truncated'] else 'no'}",
+    ]
+
+    if payload["type"] == "object":
+        lines.append(f"Key count: {payload['key_count']}")
+        if payload["keys"]:
+            lines.append("Keys: " + ", ".join(str(key) for key in payload["keys"]))
+        lines.append("Value:")
+        lines.append(_render_json_text(payload["value"]))
+    elif payload["type"] == "array":
+        lines.append(f"Length: {payload['length']}")
+        lines.append("Items:")
+        lines.append(_render_json_text(payload["items"]))
+    else:
+        lines.append("Value:")
+        lines.append(_render_json_text(payload["value"]))
+
+    return "\n".join(lines)
 
 
 def grep_json_paths(path, path_pattern=".*", value_pattern=".*", limit=20):

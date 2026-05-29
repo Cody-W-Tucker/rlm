@@ -45,6 +45,28 @@ defmodule Rlm.Engine.FileAccessTest do
     assert length(evidence["hit_paths"]) >= 1
   end
 
+  test "render_json produces plain-text handoff output" do
+    tmp = TestHelpers.temp_dir("rlm-engine-render-json")
+    on_exit(fn -> File.rm_rf!(tmp) end)
+
+    File.write!(
+      Path.join(tmp, "profile.json"),
+      Jason.encode!(%{"profile" => %{"name" => "Cody", "traits" => ["iterative", "direct"]}})
+    )
+
+    settings = TestHelpers.settings(%{max_iterations: 1})
+    assert {:ok, bundle} = Loader.load({:path, Path.join(tmp, "profile.json")}, settings)
+
+    assert {:ok, result} =
+             Engine.run("render json", bundle, settings, Rlm.TestRenderJsonProvider)
+
+    assert result.completed?
+    assert result.answer =~ "Path:"
+    assert result.answer =~ "JSON path: $.profile"
+    assert result.answer =~ "\"name\": \"Cody\""
+    assert result.answer =~ "\"traits\""
+  end
+
   test "tracks search provenance and hit-followup reads" do
     tmp = TestHelpers.temp_dir("rlm-engine-followup-evidence")
     on_exit(fn -> File.rm_rf!(tmp) end)
