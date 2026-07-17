@@ -163,24 +163,27 @@ def grep_files(pattern, limit=50, path=None):
     query = state.record_search(pattern, "grep_files")
 
     for candidate in _scoped_paths(path):
-        with open(candidate, "r", encoding="utf-8") as handle:
-            for number, line in enumerate(handle, start=1):
-                if compiled.search(line):
-                    state.evidence["hit_paths"].add(candidate)
-                    text = line.rstrip(chr(10))
-                    state.register_hit(query, candidate, number, text)
-                    matches.append(
-                        Hit(
-                            candidate,
-                            number,
-                            text,
-                            query_id=query["id"],
-                            query_kind=query["kind"],
-                            query_pattern=query["pattern"],
+        try:
+            with open(candidate, "r", encoding="utf-8", errors="replace") as handle:
+                for number, line in enumerate(handle, start=1):
+                    if compiled.search(line):
+                        state.evidence["hit_paths"].add(candidate)
+                        text = line.rstrip(chr(10))
+                        state.register_hit(query, candidate, number, text)
+                        matches.append(
+                            Hit(
+                                candidate,
+                                number,
+                                text,
+                                query_id=query["id"],
+                                query_kind=query["kind"],
+                                query_pattern=query["pattern"],
+                            )
                         )
-                    )
-                    if len(matches) >= safe_limit:
-                        return matches
+                        if len(matches) >= safe_limit:
+                            return matches
+        except OSError:
+            continue
 
     return matches
 
@@ -193,24 +196,27 @@ def grep_open(pattern, limit=10, window=12, path=None):
     query = state.record_search(pattern, "grep_open")
 
     for candidate in _scoped_paths(path):
-        with open(candidate, "r", encoding="utf-8") as handle:
-            for number, line in enumerate(handle, start=1):
-                text = line.rstrip(chr(10))
-                if compiled.search(line):
-                    state.evidence["hit_paths"].add(candidate)
-                    state.register_hit(query, candidate, number, text)
-                    matches.append(
-                        OpenedHit(
-                            candidate,
-                            number,
-                            text,
-                            match_preview(candidate, number, safe_window),
-                            query_id=query["id"],
-                            query_kind=query["kind"],
-                            query_pattern=query["pattern"],
+        try:
+            with open(candidate, "r", encoding="utf-8", errors="replace") as handle:
+                for number, line in enumerate(handle, start=1):
+                    text = line.rstrip(chr(10))
+                    if compiled.search(line):
+                        state.evidence["hit_paths"].add(candidate)
+                        state.register_hit(query, candidate, number, text)
+                        matches.append(
+                            OpenedHit(
+                                candidate,
+                                number,
+                                text,
+                                match_preview(candidate, number, safe_window),
+                                query_id=query["id"],
+                                query_kind=query["kind"],
+                                query_pattern=query["pattern"],
+                            )
                         )
-                    )
-                    if len(matches) >= safe_limit:
-                        return matches
+                        if len(matches) >= safe_limit:
+                            return matches
+        except OSError:
+            continue
 
     return matches

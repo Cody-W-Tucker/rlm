@@ -253,4 +253,44 @@ defmodule Rlm.Engine.FixtureRecoveryTest do
     assert failure.class == :insufficient_grounding
     assert failure.message =~ "at least 3 relevant files"
   end
+
+  test "forced-read recovery feedback reaches the next iteration prompt" do
+    tmp = TestHelpers.temp_dir("rlm-engine-forced-read-recovery")
+    on_exit(fn -> File.rm_rf!(tmp) end)
+
+    EngineTestSupport.build_fixture_corpus(tmp)
+    settings = TestHelpers.settings(%{max_iterations: 3})
+
+    assert {:ok, bundle} = Loader.load({:path, tmp}, settings)
+
+    assert {:ok, result} =
+             Engine.run(
+               "summarize",
+               bundle,
+               settings,
+               Rlm.TestForcedReadRecoveryProvider
+             )
+
+    assert result.completed?
+    assert result.answer =~ "Recovered with forced-read grounding"
+    assert result.grounding.grade == "A"
+    assert length(result.failure_history) == 1
+
+    failure = hd(result.failure_history)
+    assert failure.class == :insufficient_grounding
+    assert failure.message =~ "Stop expanding the search space"
+
+    # Verify the forced-read feedback was included in the recovery prompt
+    # that was sent back to the provider. The first iteration record's
+    # stdout shows the search-only output; the recovery message was
+    # appended as a user message in the conversation history.
+    # We verify the provider saw the recovery message by checking the
+    # recovery_feedback contains the grounding error text.
+    first_record = hd(result.iteration_records)
+    assert first_record.stdout =~ "identity"
+
+    # The provider's second iteration produced the recovered answer,
+    # proving it received and acted on the forced-read feedback.
+    assert length(result.iteration_records) == 2
+  end
 end

@@ -251,4 +251,33 @@ defmodule Rlm.Engine.FileAccessTest do
     assert stdout =~ "995: {\"row\":995}"
     assert stdout =~ "997: {\"row\":997}"
   end
+
+  test "grep_files and read_file tolerate non-UTF-8 files alongside valid files" do
+    tmp = TestHelpers.temp_dir("rlm-engine-utf8-mixed")
+    on_exit(fn -> File.rm_rf!(tmp) end)
+
+    # Valid UTF-8 file
+    File.write!(Path.join(tmp, "valid.txt"), "alpha\nbeta\ngamma\n")
+
+    # File containing non-UTF-8 bytes (0xFF 0xFE is invalid UTF-8 sequence)
+    invalid_path = Path.join(tmp, "invalid.bin")
+    File.write!(invalid_path, "good line\n\xFF\xFE bad bytes here\nclean line\n")
+
+    settings = TestHelpers.settings(%{max_iterations: 1})
+
+    assert {:ok, bundle} = Loader.load({:path, tmp}, settings)
+
+    assert {:ok, result} =
+             Engine.run(
+               "find alpha",
+               bundle,
+               settings,
+               Rlm.TestUtf8MixedProvider
+             )
+
+    assert result.completed?
+    # grep_files found alpha in valid.txt — the scan should not abort
+    stdout = hd(result.iteration_records).stdout
+    assert stdout =~ "alpha"
+  end
 end

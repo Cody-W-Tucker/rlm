@@ -3,6 +3,12 @@ defmodule Rlm.Engine.Grounding.Grade do
 
   alias Rlm.Engine.Grounding.Policy
 
+  @doc """
+  Assesses grounding quality. Returns a map with:
+  - `grade` — legacy letter grade (A/B/C/D/F) for existing consumers
+  - `level` — structural level atom (`:read_backed_multi`, etc.)
+  - `label`, `summary`, `metrics`, `semantic` — as before
+  """
   def assess(context_bundle, iteration_records) do
     if Policy.file_backed?(context_bundle) do
       metrics = metrics(iteration_records)

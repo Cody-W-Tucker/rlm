@@ -45,8 +45,7 @@ defmodule Rlm.Engine.Grounding.Policy do
         target = promoted_read_target(context_bundle)
 
         cond do
-          search_count >= @late_search_round_threshold and
-              promoted_reads < target ->
+          search_count >= @late_search_round_threshold and promoted_reads < target ->
             {:error,
              "Grounding grade #{grade} is still too weak after #{search_count} search rounds. Stop searching now and promote at least #{target} strongest hits into targeted `read_file()` or `read_jsonl()` windows before taking another broad retrieval step."}
 
@@ -391,8 +390,10 @@ defmodule Rlm.Engine.Grounding.Policy do
 
   defp validate_search_promotion(context_bundle, iteration_records) do
     case Grade.assess(context_bundle, iteration_records) do
-      %{grade: grade, metrics: %{search_count: search_count} = metrics}
-      when search_count >= @minimum_promoted_read_windows ->
+      %{grade: grade, level: level, metrics: %{search_count: search_count} = metrics}
+      when ((level in [:read_backed_multi, :read_backed]) or
+              (level in [:scout_only, :search_only] and search_count >= 3)) and
+             search_count >= @minimum_promoted_read_windows ->
         read_units = read_units(context_bundle, metrics)
         target = promoted_read_target(context_bundle)
 

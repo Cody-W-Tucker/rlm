@@ -1056,3 +1056,67 @@ defmodule Rlm.PartialThenErrorProvider do
     {:ok, %{text: "unused", input_tokens: 0, output_tokens: 0}}
   end
 end
+
+defmodule Rlm.TestUtf8MixedProvider do
+  @behaviour Rlm.Providers.Provider
+
+  def generate_code(_history, _system_prompt, _settings) do
+    {:ok,
+     %{
+       text:
+         "```python\nhits = grep_files(\"alpha\", limit=5)\nif hits:\n    print(hits[0])\nfor p in list_files():\n    print(read_file(p, limit=3))\nFINAL(hits[0].path)\n```",
+       input_tokens: 0,
+       output_tokens: 0
+     }}
+  end
+
+  def complete_subquery(_sub_context, _instruction, _settings) do
+    {:ok, %{text: "unused", input_tokens: 0, output_tokens: 0}}
+  end
+end
+
+defmodule Rlm.TestForcedReadRecoveryProvider do
+  @behaviour Rlm.Providers.Provider
+
+  # First iteration: search 3 times with no reads → triggers grounding error
+  # Second iteration (after recovery): read the files and finalize
+  def generate_code(history, _system_prompt, _settings) do
+    if Enum.any?(history, &String.contains?(&1.content, "Stop expanding")) do
+      {:ok,
+       %{
+         text: """
+         ```python
+         targets = [
+             path
+             for path in list_files()
+             if path.endswith("Aimlessness.md") or path.endswith("Belief.md") or path.endswith("Sexual Urges Are Elusive to Introspection.md")
+         ]
+         for target in targets:
+             print(read_file(target, limit=5))
+         FINAL("Recovered with forced-read grounding")
+         ```
+         """,
+         input_tokens: 0,
+         output_tokens: 0
+       }}
+    else
+      {:ok,
+       %{
+         text: """
+         ```python
+         hits1 = grep_files("identity", limit=2)
+         hits2 = grep_files("meaning", limit=2)
+         hits3 = grep_files("introspection", limit=2)
+         print(hits1, hits2, hits3)
+         ```
+         """,
+         input_tokens: 0,
+         output_tokens: 0
+       }}
+    end
+  end
+
+  def complete_subquery(_sub_context, _instruction, _settings) do
+    {:ok, %{text: "unused", input_tokens: 0, output_tokens: 0}}
+  end
+end

@@ -7,7 +7,7 @@ from runtime.search import JsonPathHit
 
 def _load_json(path):
     normalized = state.normalize_allowed_path(path)
-    with open(normalized, "r", encoding="utf-8") as handle:
+    with open(normalized, "r", encoding="utf-8", errors="replace") as handle:
         return normalized, json.load(handle)
 
 

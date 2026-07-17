@@ -96,7 +96,7 @@ def grep_jsonl_fields(path, field_pattern, text_pattern=".*", limit=20):
     matches = []
     query = state.record_search(f"jsonl:{field_pattern}::{text_pattern}", "grep_jsonl_fields")
 
-    with open(normalized, "r", encoding="utf-8") as handle:
+    with open(normalized, "r", encoding="utf-8", errors="replace") as handle:
         for number, line in enumerate(handle, start=1):
             text = line.rstrip("\r\n")
             record, error = parse_jsonl_line(text)

@@ -61,7 +61,7 @@ def read_file_lines(normalized, safe_offset, safe_limit):
     end_line = safe_offset + safe_limit - 1
 
     # Stream until the requested window instead of materializing the whole file.
-    with open(normalized, "r", encoding="utf-8") as handle:
+    with open(normalized, "r", encoding="utf-8", errors="replace") as handle:
         for number, line in enumerate(handle, start=1):
             if number < safe_offset:
                 continue
@@ -78,7 +78,7 @@ def read_lines(normalized, safe_offset, safe_limit):
     selected = []
     end_line = safe_offset + safe_limit - 1
 
-    with open(normalized, "r", encoding="utf-8") as handle:
+    with open(normalized, "r", encoding="utf-8", errors="replace") as handle:
         for number, line in enumerate(handle, start=1):
             if number < safe_offset:
                 continue
@@ -92,7 +92,7 @@ def read_lines(normalized, safe_offset, safe_limit):
 
 
 def count_file_lines(normalized):
-    with open(normalized, "r", encoding="utf-8") as handle:
+    with open(normalized, "r", encoding="utf-8", errors="replace") as handle:
         return sum(1 for _ in handle)
 
 
